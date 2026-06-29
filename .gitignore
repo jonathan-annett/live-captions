@@ -1,0 +1,38 @@
+# Node
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.eggs/
+*.egg-info/
+build/
+*.spec.bak
+
+# Models / caches (downloaded on first run)
+models/
+.cache/
+*.bin
+*.onnx
+*.gguf
+
+# Session output
+sessions/
+*.srt
+*.vtt
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env
+.env
+.env.local

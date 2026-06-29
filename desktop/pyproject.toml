@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "captions-desktop"
+version = "0.0.0"
+description = "On-device live caption generator — desktop build (FastAPI + WhisperX/faster-whisper, pywebview)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Jonathan Annett" }]
+dependencies = [
+  "pydantic>=2.7",
+]
+
+# Heavy / platform-specific runtime deps land in M4+. Kept as extras so the
+# protocol package and tests install cleanly without pulling torch/CTranslate2.
+[project.optional-dependencies]
+server = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "sounddevice>=0.4.7",
+  "numpy>=1.26",
+]
+asr = [
+  "faster-whisper>=1.0.3",
+]
+desktop = [
+  "pywebview>=5.1",
+]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+captions = "captions_desktop.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["captions_desktop"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
