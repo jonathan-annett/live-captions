@@ -30,8 +30,25 @@ A standing convention for **all** major-version work:
   `v(N+1).caption.guru` spins up as the next beta channel.
 
 Containment trade-offs to remember: separate origins mean tester **settings don't carry across**
-(use the planned export/import), and the `caption-room` WebSocket is **cross-origin** from the beta
-(the room Worker validates the `Origin` header rather than relying on CORS).
+(use the planned export/import).
+
+### Deploying the v2 beta (`v2.caption.guru`)
+
+One same-origin Worker (`caption-guru-v2`, `wrangler.v2.jsonc`) serves the PWA assets, the
+`/hf` model proxy, and the `CaptionRoom` Durable Object at `/r/*` — so the audience layer needs
+no CORS/Origin handling. It's isolated from prod (`live-captions`).
+
+```bash
+pnpm --filter @captions/pwa build                 # build the assets first
+set -a; . ./cf-token.env; set +a                  # CLOUDFLARE_API_TOKEN/_ACCOUNT_ID (gitignored)
+pnpm exec wrangler deploy --config wrangler.v2.jsonc --dry-run   # validate bundle + bindings
+pnpm exec wrangler deploy --config wrangler.v2.jsonc            # publish
+# smoke-test the live room:
+ROOM_URL=https://v2.caption.guru node packages/room/scripts/verify.mjs
+```
+
+The first deploy auto-provisions the `v2.caption.guru` DNS record + TLS (custom domain) and runs
+the DO SQLite migration. (API tokens expire — reissue if `wrangler whoami` fails.)
 
 ## Desktop releases (GitHub Releases)
 PyInstaller one-folder bundles, zipped per platform. `torch` is excluded; models download
