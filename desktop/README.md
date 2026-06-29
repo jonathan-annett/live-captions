@@ -34,11 +34,29 @@ pnpm --filter @captions/display build
 ## Run
 
 ```bash
-captions serve                       # live: mic -> faster-whisper -> captions
+captions serve                       # live captions + fullscreen display window
 captions serve --model small.en      # pick a model (tiny/base/small .en)
 captions serve --demo                # scripted captions, no mic/ASR (great for testing)
 ```
 
-Then open the printed **display** URL (`http://127.0.0.1:8765/?source=ws`) — that's
-the on-air surface to send to your switcher (HDMI fullscreen + Chrome-kiosk come in M5).
-History/scrollback substrate is at `/history`; captions stream over `/ws`.
+By default `serve` opens the display **fullscreen via pywebview** (the HDMI output
+to feed your switcher). Display options:
+
+```bash
+captions serve --list-monitors                 # list monitors, then exit
+captions serve --monitor 1                      # put the fullscreen output on monitor 1 (HDMI)
+captions serve --background chroma              # green key bg (default #00b140)
+captions serve --background chroma --bg-color "#00ff00"
+captions serve --background transparent         # transparent (browser-source style)
+captions serve --kiosk                          # use Chrome kiosk instead of pywebview
+captions serve --windowed                       # don't go fullscreen
+captions serve --no-open                         # server only; open the URL yourself
+```
+
+The window just renders the page; the background (solid/chroma/transparent) is
+painted from config, so HDMI capture vs keying is a flag, not a rebuild. The same
+page is also a LAN **browser source**: `http://<host>:8765/?source=ws`. Captions
+stream over `/ws`; the history/scrollback substrate is at `/history`.
+
+> pywebview is needed for the fullscreen window (`pip install -e ".[desktop]"`).
+> Without it, `serve` automatically falls back to Chrome kiosk.

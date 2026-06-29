@@ -32,8 +32,8 @@ Early development. See [the build plan](#roadmap) below.
 - **M2** Shared display surface ✅
 - **M3** PWA in-browser engine (transformers.js WebGPU/WASM) ✅
 - **M4** Desktop server + faster-whisper streaming ✅
-- **M5** pywebview fullscreen HDMI output + CLI kiosk ← _next_
-- **M6** Transcript export + custom dictionary
+- **M5** pywebview fullscreen HDMI output + CLI kiosk ✅
+- **M6** Transcript export + custom dictionary ← _next_
 - **M7** Apple-Silicon GPU backend (MLX-Whisper / whisper.cpp Metal)
 - **M8** Packaging (PyInstaller bundles, PWA deploy)
 
