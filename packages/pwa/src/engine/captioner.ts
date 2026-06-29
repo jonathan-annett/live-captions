@@ -3,9 +3,29 @@ import { EnergyVAD } from "../audio/vad.js";
 import workletUrl from "../audio/pcm-worklet.js?url";
 import { correctText } from "./dictionary.js";
 import type { WorkerEvent } from "./messages.js";
-import { isDegenerate, isLikelySpeech } from "./sanitize.js";
+import {
+  analyzeClip,
+  isDegenerate,
+  MIN_PEAK_RMS,
+  MIN_SPEECH_MS,
+} from "./sanitize.js";
 
 const TARGET_RATE = 16000;
+
+// Diagnostics / live tuning via the page URL (so we can debug the deployed site
+// without a rebuild): ?debug logs every gate decision + decode to the console;
+// ?minrms= and ?minms= override the no-speech gate thresholds.
+const PARAMS =
+  typeof location !== "undefined"
+    ? new URLSearchParams(location.search)
+    : new URLSearchParams();
+const DEBUG = PARAMS.has("debug");
+const MIN_RMS = PARAMS.has("minrms") ? Number(PARAMS.get("minrms")) : MIN_PEAK_RMS;
+const MIN_MS = PARAMS.has("minms") ? Number(PARAMS.get("minms")) : MIN_SPEECH_MS;
+if (DEBUG) {
+  // eslint-disable-next-line no-console
+  console.debug(`[cap] no-speech gate: peak≥${MIN_RMS} over ≥${MIN_MS}ms`);
+}
 
 export interface CaptionerOptions {
   model: string;
@@ -184,10 +204,19 @@ export class Captioner {
     this.utterSamples = 0;
     if (snap.samples.length === 0) return;
     // Don't decode silence/near-silence — that's what triggers phantom phrases.
-    if (!isLikelySpeech(snap.samples, TARGET_RATE)) return;
+    const a = analyzeClip(snap.samples, TARGET_RATE, MIN_RMS, MIN_MS);
+    this.log("final", a);
+    if (!a.isSpeech) {
+      this.logDrop("final", "no-speech gate", a);
+      return;
+    }
     void this.rpc(snap.samples).then((text) => {
-      if (text && !isDegenerate(text)) {
+      const degen = isDegenerate(text);
+      if (DEBUG) console.debug(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
+      if (text && !degen) {
         this.emit({ type: "final", segment: { ...snap.meta, text: this.correct(text) } });
+      } else {
+        this.logDrop("final", !text ? "empty decode" : "degenerate text", a);
       }
     });
   }
@@ -195,19 +224,44 @@ export class Captioner {
   private requestPartial(): void {
     this.partialBusy = true;
     const snap = this.snapshot();
-    if (!isLikelySpeech(snap.samples, TARGET_RATE)) {
+    const a = analyzeClip(snap.samples, TARGET_RATE, MIN_RMS, MIN_MS);
+    this.log("partial", a);
+    if (!a.isSpeech) {
       this.partialBusy = false;
+      this.logDrop("partial", "no-speech gate", a);
       return;
     }
     void this.rpc(snap.samples).then((text) => {
       this.partialBusy = false;
-      if (text && !isDegenerate(text) && this.currentId === snap.meta.id) {
+      const degen = isDegenerate(text);
+      if (text && !degen && this.currentId === snap.meta.id) {
         this.emit({
           type: "partial",
           segment: { ...snap.meta, text: this.correct(text) },
         });
+      } else if (text && degen) {
+        this.logDrop("partial", "degenerate text", a);
       }
     });
+  }
+
+  // --- diagnostics (enabled with ?debug on the page URL) --------------------
+
+  private log(kind: "final" | "partial", a: import("./sanitize.js").ClipAnalysis): void {
+    if (!DEBUG) return;
+    console.debug(
+      `[cap] ${kind} clip dur=${a.ms.toFixed(0)}ms peak=${a.peak.toFixed(4)} ` +
+        `long=${a.longEnough} loud=${a.loudEnough} → speech=${a.isSpeech}`,
+    );
+  }
+
+  private logDrop(
+    kind: "final" | "partial",
+    reason: string,
+    a: import("./sanitize.js").ClipAnalysis,
+  ): void {
+    if (!DEBUG) return;
+    console.debug(`[cap] DROP ${kind} (${reason}) peak=${a.peak.toFixed(4)} dur=${a.ms.toFixed(0)}ms`);
   }
 
   private snapshot(): {
