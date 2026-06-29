@@ -29,13 +29,40 @@
     ? "Caption Guru"
     : "Live Captions";
 
+  // Persist the operator's model + mic choices so a reload doesn't snap back to
+  // the default (base.en, the weakest model) — that was skewing test results.
+  const LS_MODEL = "cg.model";
+  const LS_DEVICE = "cg.deviceId";
+  const lsGet = (k: string): string | null => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const lsSet = (k: string, v: string): void => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* private mode / storage disabled */
+    }
+  };
+
   const store = new UiStore();
   let mics = $state<MediaDeviceInfo[]>([]);
-  let deviceId = $state<string>("");
-  let model = $state(MODELS[1]!.id);
+  const storedModel = lsGet(LS_MODEL);
+  let deviceId = $state<string>(lsGet(LS_DEVICE) ?? "");
+  // Restore the saved model only if it's still a known option.
+  let model = $state(
+    MODELS.some((m) => m.id === storedModel) ? storedModel! : MODELS[1]!.id,
+  );
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
+
+  // Save selections as they change.
+  $effect(() => lsSet(LS_MODEL, model));
+  $effect(() => lsSet(LS_DEVICE, deviceId));
 
   // --- room publishing ------------------------------------------------------
   // A publish target can come from the page URL (?publish=<url> or
@@ -220,6 +247,12 @@
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       mics = devices.filter((d) => d.kind === "audioinput");
+      // If the saved mic is gone (and the list has real ids), fall back to
+      // default so start() can't fail on an exact-device constraint.
+      if (deviceId && mics.length && mics.every((m) => m.deviceId) &&
+          !mics.some((m) => m.deviceId === deviceId)) {
+        deviceId = "";
+      }
     } catch {
       /* labels populate after first permission grant */
     }
