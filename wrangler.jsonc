@@ -1,0 +1,14 @@
+{
+  // Deploys the PWA as a Cloudflare Worker with static assets (the modern
+  // replacement for Pages). No Worker script — assets-only — so it behaves like
+  // a static site host. `_headers` and `_redirects` in the asset dir are honored.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "live-captions",
+  "compatibility_date": "2026-06-01",
+  "assets": {
+    // Built by `pnpm --filter @captions/pwa build`. Path is relative to this file.
+    "directory": "./packages/pwa/dist",
+    // Serve index.html for unknown routes (SPA), matching the _redirects fallback.
+    "not_found_handling": "single-page-application"
+  }
+}
