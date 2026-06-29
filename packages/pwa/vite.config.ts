@@ -27,9 +27,11 @@ export default defineConfig({
     target: "es2022",
     rollupOptions: {
       input: {
-        // Two same-origin pages so they can share a BroadcastChannel.
+        // Same-origin pages: control + display share a BroadcastChannel; the
+        // viewer is the audience join target (the QR points here).
         main: resolve(root, "index.html"), // operator control
         display: resolve(root, "display.html"), // on-air surface
+        viewer: resolve(root, "viewer.html"), // audience viewer
       },
     },
   },

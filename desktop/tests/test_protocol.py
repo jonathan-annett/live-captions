@@ -66,6 +66,58 @@ def test_parse_config_message_from_ts_shape():
     assert msg.config.background.kind == "chroma"
 
 
+def test_caption_region_round_trips_camelcase():
+    wire = json.dumps(
+        {
+            "type": "config",
+            "config": {
+                "fontFamily": "Inter",
+                "fontSize": 6,
+                "color": "#fff",
+                "background": {"kind": "chroma", "color": "#00ff00"},
+                "position": "bottom",
+                "textAlign": "center",
+                "maxLines": 2,
+                "mode": "rolling",
+                "showPartial": True,
+                "uppercase": False,
+                "region": {"x": 5, "y": 70, "width": 90, "height": 25},
+            },
+        }
+    )
+    msg = parse_server_message(wire)
+    assert msg.config.region is not None
+    assert msg.config.region.height == 25
+    # Round-trips back to camelCase, and omitted when None.
+    assert "region" in json.loads(dump_message(msg))["config"]
+    assert "region" not in json.loads(DEFAULT_DISPLAY_CONFIG.model_dump_json(by_alias=True, exclude_none=True))
+
+
+def test_qr_overlay_round_trips_camelcase():
+    wire = json.dumps(
+        {
+            "type": "config",
+            "config": {
+                "fontFamily": "Inter",
+                "fontSize": 6,
+                "color": "#fff",
+                "background": {"kind": "chroma", "color": "#00ff00"},
+                "position": "bottom",
+                "textAlign": "center",
+                "maxLines": 2,
+                "mode": "rolling",
+                "showPartial": True,
+                "uppercase": False,
+                "qr": {"url": "https://v2.caption.guru/r/abc/subscribe", "x": 70, "y": 5, "size": 25},
+            },
+        }
+    )
+    msg = parse_server_message(wire)
+    assert msg.config.qr is not None
+    assert msg.config.qr.url.endswith("/r/abc/subscribe")
+    assert "qr" in json.loads(dump_message(msg))["config"]
+
+
 def test_parse_client_history_request():
     msg = parse_client_message(json.dumps({"type": "requestHistory", "since": 30}))
     assert msg.since == 30

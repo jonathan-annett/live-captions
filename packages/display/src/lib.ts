@@ -4,4 +4,6 @@ export { default as Viewer } from "./Viewer.svelte";
 export { CaptionStore } from "./captionStore.svelte.js";
 export { ViewerLog } from "./viewerLog.js";
 export { ViewerStore } from "./viewerStore.svelte.js";
+export { qrSvg } from "./qr.js";
+export { qrSlidePngBlob } from "./qrPng.js";
 export * from "./sources/index.js";

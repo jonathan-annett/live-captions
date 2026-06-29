@@ -66,6 +66,35 @@ export type DisplayPosition = z.infer<typeof DisplayPositionSchema>;
 export const DisplayModeSchema = z.enum(["rolling", "scroll"]);
 export type DisplayMode = z.infer<typeof DisplayModeSchema>;
 
+/**
+ * Operator-defined caption box as a percentage of the output frame (0..100).
+ * Lets the operator place/size captions to fit other on-screen content — e.g. a
+ * lower-thirds band on a chroma-key canvas. When omitted, the display falls back
+ * to {@link DisplayPositionSchema} placement across the full frame.
+ */
+export const CaptionRegionSchema = z.object({
+  x: z.number().min(0).max(100),
+  y: z.number().min(0).max(100),
+  width: z.number().min(0).max(100),
+  height: z.number().min(0).max(100),
+});
+export type CaptionRegion = z.infer<typeof CaptionRegionSchema>;
+
+/**
+ * QR overlay advertising the live audience room. Shown by the display only in
+ * chroma-key mode (it breaks out of the caption box onto the keyed canvas, big
+ * enough to scan across an auditorium). Position is the top-left as % of frame;
+ * `size` is the square edge as % of the smaller frame dimension.
+ */
+export const QrOverlaySchema = z.object({
+  /** the room join/subscribe link the QR encodes */
+  url: z.string(),
+  x: z.number().min(0).max(100),
+  y: z.number().min(0).max(100),
+  size: z.number().min(0).max(100),
+});
+export type QrOverlay = z.infer<typeof QrOverlaySchema>;
+
 export const DisplayConfigSchema = z.object({
   fontFamily: z.string(),
   /** font size in viewport-height units (vh) so it scales with output res */
@@ -80,6 +109,10 @@ export const DisplayConfigSchema = z.object({
   /** show the live (un-finalized) hypothesis in a dimmed style */
   showPartial: z.boolean(),
   uppercase: z.boolean(),
+  /** operator-placed caption box (% of frame); omitted = full-frame + position */
+  region: CaptionRegionSchema.optional(),
+  /** live-room QR overlay; rendered by the display only in chroma-key mode */
+  qr: QrOverlaySchema.optional(),
 });
 export type DisplayConfig = z.infer<typeof DisplayConfigSchema>;
 

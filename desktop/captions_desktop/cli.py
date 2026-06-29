@@ -40,6 +40,20 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="CaptionRoom publish URL (token-gated) to relay captions to an "
         "audience room, e.g. wss://v2.caption.guru/r/<id>/publish?token=<tok>",
     )
+    serve.add_argument(
+        "--start-room",
+        default=None,
+        metavar="BASE",
+        help="create a fresh audience room at this base (e.g. https://v2.caption.guru), "
+        "relay captions to it, and show a join QR on the display (in chroma mode)",
+    )
+    serve.add_argument(
+        "--viewer-base",
+        default=None,
+        metavar="URL",
+        help="public base that serves the audience viewer page (default: --start-room "
+        "base); the join QR points at <viewer-base>/viewer.html",
+    )
 
     # Display output
     serve.add_argument("--monitor", type=int, default=0, help="monitor index (HDMI out)")
@@ -53,6 +67,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "--background", choices=["solid", "chroma", "transparent"], default=None
     )
     serve.add_argument("--bg-color", default=None, help="hex color for solid/chroma")
+    serve.add_argument(
+        "--caption-region",
+        default=None,
+        metavar="X,Y,W,H",
+        help="operator caption box as percentages of the frame (e.g. 5,70,90,25 "
+        "for a lower-thirds band); pairs with --background chroma for keying",
+    )
 
     args = parser.parse_args(argv)
     if args.cmd == "serve":
@@ -76,6 +97,7 @@ def _serve(args: argparse.Namespace) -> None:
 
     hub = CaptionHub()
     _apply_background(hub, args)
+    _apply_caption_region(hub, args)
 
     if args.demo:
         controller = MockProducer(hub)
@@ -91,10 +113,19 @@ def _serve(args: argparse.Namespace) -> None:
     if terms:
         controller.set_dictionary(terms)
 
+    publish_url = args.publish_url
+    join_url = None
+    if args.start_room:
+        room = _create_room(args.start_room)
+        publish_url = room["publishUrl"]
+        join_url = _join_url(args.viewer_base or args.start_room, args.start_room, room["id"])
+        # Show a join QR on the display (rendered only in chroma-key mode).
+        hub.set_config(
+            {"qr": {"url": join_url, "x": 72.0, "y": 6.0, "size": 24.0}}
+        )
+
     web_dir = find_web_dir(args.web)
-    app = build_app(
-        hub, controller, web_dir=web_dir, room_publish_url=args.publish_url
-    )
+    app = build_app(hub, controller, web_dir=web_dir, room_publish_url=publish_url)
 
     transparent = args.background == "transparent"
     base = f"http://{args.host}:{args.port}"
@@ -105,8 +136,12 @@ def _serve(args: argparse.Namespace) -> None:
     print(f"  frontend: {web_dir or '(not built — see / for help)'}")
     print(f"  display:  {url}")
     print(f"  ws:       {base}/ws   history: {base}/history")
-    if args.publish_url:
-        print(f"  room:     relaying captions to {args.publish_url}")
+    if publish_url:
+        print(f"  room:     relaying captions to {publish_url}")
+    if join_url:
+        print(f"  join:     audience QR → {join_url}")
+    if args.caption_region:
+        print(f"  caption:  box at {args.caption_region} (% x,y,w,h)")
 
     if args.no_open:
         import uvicorn
@@ -162,6 +197,44 @@ def _apply_background(hub: CaptionHub, args: argparse.Namespace) -> None:
         hub.set_config(
             {"background": {"kind": "solid", "color": args.bg_color or "#000000"}}
         )
+
+
+def _apply_caption_region(hub: CaptionHub, args: argparse.Namespace) -> None:
+    if not args.caption_region:
+        return
+    try:
+        x, y, w, h = (float(p) for p in args.caption_region.split(","))
+    except ValueError:
+        raise SystemExit(
+            "--caption-region must be four numbers: X,Y,W,H (percent of frame)"
+        )
+    hub.set_config({"region": {"x": x, "y": y, "width": w, "height": h}})
+
+
+def _join_url(viewer_base: str, room_base: str, room_id: str) -> str:
+    """Audience viewer-page URL the join QR encodes (not the raw ws socket)."""
+    url = viewer_base.rstrip("/") + f"/viewer.html?source=room&room={room_id}"
+    # If the room's WebSocket lives on a different host than the viewer page,
+    # tell the viewer where to connect.
+    if room_base.rstrip("/") != viewer_base.rstrip("/"):
+        from urllib.parse import quote
+
+        url += "&base=" + quote(room_base.rstrip("/"), safe="")
+    return url
+
+
+def _create_room(base: str) -> dict:
+    """POST <base>/r/new to mint an audience room; returns the room's URLs."""
+    import json
+    import urllib.request
+
+    url = base.rstrip("/") + "/r/new"
+    req = urllib.request.Request(url, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except Exception as exc:  # noqa: BLE001 - surface a clean startup error
+        raise SystemExit(f"--start-room: could not create a room at {url}: {exc}")
 
 
 def _run_server_threaded(app, host: str, port: int):

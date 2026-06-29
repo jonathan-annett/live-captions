@@ -1,11 +1,16 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    DEFAULT_DISPLAY_CONFIG,
     exportTranscript,
+    type Background,
+    type DisplayConfig,
     type ExportFormat,
     type ServerMessage,
   } from "@captions/protocol";
   import {
+    qrSlidePngBlob,
+    qrSvg,
     RoomPublisher,
     roomPublishUrl,
     type ConnectionState,
@@ -32,24 +37,99 @@
   let running = $state(false);
   let captioner: Captioner | null = null;
 
-  // Optional room publishing (the operator "Start room" UI lands in a later
-  // phase; for now a publish target can be supplied via the page URL:
-  //   ?publish=<full publish URL>   or   ?room=<id>&token=<tok>[&base=<origin>]
-  // When set, the local caption stream is teed to the CaptionRoom.
+  // --- room publishing ------------------------------------------------------
+  // A publish target can come from the page URL (?publish=<url> or
+  // ?room=<id>&token=<tok>[&base=]) or from the "Start room" button, which mints
+  // a fresh room at `roomBase` (default same-origin). The caption stream is teed
+  // to the CaptionRoom whenever a publisher is active.
+  const roomBase =
+    new URLSearchParams(location.search).get("roomBase") ?? location.origin;
   const publishUrl = resolvePublishUrl();
   let publisher: RoomPublisher | null = null;
   let publishState = $state<ConnectionState | null>(null);
+  let room = $state<{ id: string; joinUrl: string } | null>(null);
+  let roomError = $state<string | null>(null);
+
+  // The QR/join target is the audience viewer *page* (not the raw ws socket):
+  // viewer.html?source=room&room=<id>[&base=<room ws origin>].
+  function joinUrlFor(id: string): string {
+    const u = new URL("viewer.html", location.href);
+    u.searchParams.set("source", "room");
+    u.searchParams.set("room", id);
+    if (roomBase !== location.origin) u.searchParams.set("base", roomBase);
+    return u.href;
+  }
+
+  // The control owns the on-air display config (pushed over the channel). The
+  // QR overlay only renders on the display in chroma-key mode (by design).
+  const configChannel = new BroadcastChannel(CHANNEL);
+  let displayConfig = $state<DisplayConfig>({ ...DEFAULT_DISPLAY_CONFIG });
+  let bgKind = $state<Background["kind"]>(DEFAULT_DISPLAY_CONFIG.background.kind);
+  let bgColor = $state<string>("#00b140");
+
+  function pushConfig(): void {
+    configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
+  }
+
+  // Re-derive background + push whenever the operator changes it.
+  $effect(() => {
+    const background: Background =
+      bgKind === "transparent" ? { kind: "transparent" } : { kind: bgKind, color: bgColor };
+    displayConfig = { ...displayConfig, background };
+    pushConfig();
+  });
 
   function resolvePublishUrl(): string | null {
     const params = new URLSearchParams(location.search);
     const direct = params.get("publish");
     if (direct) return direct;
-    const room = params.get("room");
+    const r = params.get("room");
     const token = params.get("token");
-    if (room && token) {
-      return roomPublishUrl(room, token, params.get("base") ?? undefined);
-    }
+    if (r && token) return roomPublishUrl(r, token, params.get("base") ?? undefined);
     return null;
+  }
+
+  async function startRoom(): Promise<void> {
+    roomError = null;
+    try {
+      const res = await fetch(`${roomBase}/r/new`, { method: "POST" });
+      if (!res.ok) throw new Error(`room server returned ${res.status}`);
+      const r = await res.json();
+      const joinUrl = joinUrlFor(r.id);
+      room = { id: r.id, joinUrl };
+      publisher?.stop();
+      publisher = new RoomPublisher(r.publishUrl, (s) => (publishState = s));
+      publisher.start();
+      // Advertise the join QR on the display (shown only in chroma mode).
+      displayConfig = {
+        ...displayConfig,
+        qr: { url: joinUrl, x: 72, y: 6, size: 24 },
+      };
+      pushConfig();
+    } catch (err) {
+      roomError = String(err);
+    }
+  }
+
+  function stopRoom(): void {
+    publisher?.stop();
+    publisher = null;
+    publishState = null;
+    const { qr: _qr, ...rest } = displayConfig;
+    displayConfig = rest;
+    pushConfig();
+    room = null;
+  }
+
+  async function downloadQrPng(): Promise<void> {
+    if (!room) return;
+    const blob = await qrSlidePngBlob(room.joinUrl);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "caption-room-qr.png";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // Single funnel for the captioner's output: mirror to the UI, and (when
@@ -135,6 +215,12 @@
   }
 
   onMount(async () => {
+    // Legacy/power-user path: a publish target given in the URL starts relaying
+    // immediately (independent of the "Start room" button).
+    if (publishUrl) {
+      publisher = new RoomPublisher(publishUrl, (s) => (publishState = s));
+      publisher.start();
+    }
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       mics = devices.filter((d) => d.kind === "audioinput");
@@ -144,10 +230,6 @@
   });
 
   async function start() {
-    if (publishUrl) {
-      publisher = new RoomPublisher(publishUrl, (s) => (publishState = s));
-      publisher.start();
-    }
     captioner = new Captioner({
       model,
       channel: CHANNEL,
@@ -173,11 +255,9 @@
   }
 
   function stop() {
+    // Stops captioning only; an active room keeps running until "Stop room".
     captioner?.stop();
     captioner = null;
-    publisher?.stop();
-    publisher = null;
-    publishState = null;
     running = false;
   }
 
@@ -199,7 +279,7 @@
   <header>
     <h1>{appName}</h1>
     <span class="pill {store.status.state}">{statusLabel}</span>
-    {#if publishUrl}
+    {#if publishUrl || room}
       <span class="pill" class:listening={publishState === "open"}>
         room: {publishState ?? "idle"}
       </span>
@@ -228,6 +308,22 @@
       </select>
     </label>
 
+    <label>
+      Display background
+      <select bind:value={bgKind}>
+        <option value="solid">Solid</option>
+        <option value="chroma">Chroma key (green)</option>
+        <option value="transparent">Transparent</option>
+      </select>
+    </label>
+
+    {#if bgKind !== "transparent"}
+      <label>
+        Background color
+        <input type="color" bind:value={bgColor} />
+      </label>
+    {/if}
+
     <div class="buttons">
       {#if running}
         <button class="stop" onclick={stop}>Stop</button>
@@ -236,6 +332,35 @@
       {/if}
       <button onclick={openDisplay}>Open display ↗</button>
     </div>
+  </section>
+
+  <section class="room">
+    {#if room}
+      <div class="room-live">
+        <div class="room-info">
+          <strong>Live room</strong>
+          <a href={room.joinUrl} target="_blank" rel="noreferrer">{room.joinUrl}</a>
+          <div class="room-actions">
+            <button onclick={downloadQrPng}>Download QR slide (PNG)</button>
+            <button class="stop" onclick={stopRoom}>Stop room</button>
+          </div>
+          {#if bgKind !== "chroma"}
+            <p class="room-note">
+              The join QR shows on the projection output only in <strong>chroma-key</strong>
+              mode. Switch the display background to chroma to overlay it — or hand out
+              the PNG slide.
+            </p>
+          {/if}
+        </div>
+        <div class="room-qr">
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -- generated SVG, no user HTML -->
+          {@html qrSvg(room.joinUrl)}
+        </div>
+      </div>
+    {:else}
+      <button class="start" onclick={startRoom}>Start audience room</button>
+      {#if roomError}<span class="room-err">{roomError}</span>{/if}
+    {/if}
   </section>
 
   {#if dlInfo}
@@ -270,6 +395,38 @@
         placeholder="Names, jargon, acronyms — comma or newline separated"
       ></textarea>
     </label>
+
+    <details class="dict-help">
+      <summary>How the custom dictionary works</summary>
+      <div class="dict-help-body">
+        <p>
+          The speech model sometimes mis-spells unusual words it hasn't heard
+          before. After each line is recognized, this dictionary <strong>nudges
+          close-but-wrong words back to the spelling you want</strong>. It runs
+          on-device, instantly, and is deliberately <em>conservative</em>: only a
+          word that's a near-miss for one of your terms is changed, so ordinary
+          text is never corrupted. Capitalization is preserved.
+        </p>
+        <p>List your event's terms separated by commas or new lines. A few rules:</p>
+        <ul>
+          <li>Each term is a <strong>single word of 4+ letters</strong> (spaces
+            split it into separate words; very short acronyms like “AI” or “CPU”
+            are skipped).</li>
+          <li>Only <strong>near-misses</strong> are fixed (a letter or two off) —
+            not a word heard as a completely different word.</li>
+        </ul>
+        <p class="dict-eg"><strong>Medical conference</strong> —
+          <code>ondansetron, metoprolol, echocardiogram, pneumothorax, sepsis</code><br />
+          “ondanZetron” or “echo cardiogram”→ corrected to your spelling; a plain
+          word like “patient” is left alone.</p>
+        <p class="dict-eg"><strong>Tech workshop</strong> —
+          <code>Kubernetes, PostgreSQL, nginx, Grafana, OAuth, Kafka</code><br />
+          “kubernetis” → “Kubernetes”, “postgres QL” → “PostgreSQL”. Note: an
+          acronym heard as a totally different word (e.g. “SQL” → “sequel”) is a
+          <em>sound-alike</em>, not a near-miss — that's handled by the operator
+          sound-alike correction coming in v2, not this near-miss list.</p>
+      </div>
+    </details>
 
     <div class="export">
       <span>Export</span>
@@ -472,5 +629,55 @@
   }
   .line.partial {
     opacity: 0.55;
+  }
+  .room {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .room-live {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .room-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+  }
+  .room-info a {
+    color: #9fb4d4;
+    word-break: break-all;
+    font-size: 0.85rem;
+  }
+  .room-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .room-note {
+    font-size: 0.8rem;
+    color: #999;
+    max-width: 32rem;
+  }
+  .room-qr {
+    width: 9rem;
+    height: 9rem;
+    background: #fff;
+    padding: 0.4rem;
+    border-radius: 8px;
+    flex: 0 0 auto;
+  }
+  .room-qr :global(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .room-err {
+    color: #ff8a8a;
+    font-size: 0.85rem;
   }
 </style>

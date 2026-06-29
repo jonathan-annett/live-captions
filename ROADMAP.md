@@ -32,11 +32,20 @@ Tiers, building on that one backbone:
 - **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency tuning.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
+- **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
+  caption box (for lower-thirds keying); the live-room QR overlay is offered only in
+  chroma mode and may break out of the caption box (large enough to scan across an
+  auditorium); a full-screen QR PNG is always downloadable for slides/other gear.
 - **Native config screen** — GUI for audio device, fonts, theming, **and ASR model**
   (default-model picker + download/manage models) instead of CLI-only flags; PWA-identical
   layout with settings portable PWA↔desktop both ways. (Model *picker* may land with v2;
-  download/management is later.)
+  download/management is later.) Also a tunable **ASR window size** (latency ↔ context
+  trade-off) surfaced as a friendly control.
 - **Offline** — optional model-bundled builds for air-gapped venues.
+- **Audience Q&A** — app users submit questions anchored to a transcript excerpt;
+  the speaker swipes through them on a stage tablet (question + tagged excerpt),
+  answers, and can project a question via the overlay. Leverages the canonical
+  log + the chroma overlay.
 - **Crowdsourced moderation** — trusted viewers designated as moderators; a
   consensus vote (e.g. 3/4 majority) commits a correction to the canonical
   transcript and pushes it to everyone. Generalizes single-operator correction;

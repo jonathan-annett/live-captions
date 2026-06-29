@@ -34,6 +34,34 @@ describe("server messages", () => {
     expect(parsed.type).toBe("config");
   });
 
+  it("accepts a config with an operator caption region", () => {
+    const parsed = parseServerMessage({
+      type: "config",
+      config: { ...DEFAULT_DISPLAY_CONFIG, region: { x: 5, y: 70, width: 90, height: 25 } },
+    });
+    expect(parsed.type === "config" && parsed.config.region?.height).toBe(25);
+  });
+
+  it("accepts a config with a QR overlay", () => {
+    const parsed = parseServerMessage({
+      type: "config",
+      config: {
+        ...DEFAULT_DISPLAY_CONFIG,
+        qr: { url: "https://v2.caption.guru/r/abc/subscribe", x: 70, y: 5, size: 25 },
+      },
+    });
+    expect(parsed.type === "config" && parsed.config.qr?.url).toContain("/r/abc/");
+  });
+
+  it("rejects an out-of-range caption region", () => {
+    expect(() =>
+      parseServerMessage({
+        type: "config",
+        config: { ...DEFAULT_DISPLAY_CONFIG, region: { x: 0, y: 0, width: 120, height: 10 } },
+      }),
+    ).toThrow();
+  });
+
   it("accepts a history replay message", () => {
     const parsed = parseServerMessage({
       type: "history",

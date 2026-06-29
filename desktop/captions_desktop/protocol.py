@@ -73,6 +73,24 @@ Background = Annotated[
 ]
 
 
+class CaptionRegion(_Model):
+    """Operator-placed caption box as a percentage of the output frame (0..100)."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class QrOverlay(_Model):
+    """Live-room QR overlay; the display shows it only in chroma-key mode."""
+
+    url: str
+    x: float
+    y: float
+    size: float  # square edge as % of the smaller frame dimension
+
+
 class DisplayConfig(_Model):
     font_family: str
     font_size: float  # viewport-height units (vh)
@@ -84,6 +102,10 @@ class DisplayConfig(_Model):
     mode: Literal["rolling", "scroll"]
     show_partial: bool
     uppercase: bool
+    # Operator-placed caption box (% of frame); None = full-frame + position.
+    region: Optional[CaptionRegion] = None
+    # Live-room QR overlay; the display shows it only in chroma-key mode.
+    qr: Optional[QrOverlay] = None
 
 
 DEFAULT_DISPLAY_CONFIG = DisplayConfig(
