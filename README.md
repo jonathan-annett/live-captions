@@ -1,4 +1,4 @@
-# live-captions
+# Caption Guru
 
 Open-source, **on-device** live caption generator for live events. Audio never leaves the machine.
 

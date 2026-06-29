@@ -1,4 +1,4 @@
-# PyInstaller spec for the live-captions desktop app (one-folder bundle).
+# PyInstaller spec for the caption-guru desktop app (one-folder bundle).
 # Build:  pyinstaller packaging/captions.spec   (run from the desktop/ dir)
 #
 # Bundles the Python runtime + captions_desktop + the built display frontend
@@ -76,7 +76,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="live-captions",
+    name="caption-guru",
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -89,5 +89,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="live-captions",
+    name="caption-guru",
 )

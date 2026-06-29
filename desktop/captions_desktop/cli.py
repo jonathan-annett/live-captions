@@ -92,7 +92,7 @@ def _serve(args: argparse.Namespace) -> None:
     base = f"http://{args.host}:{args.port}"
     url = f"{base}/?source=ws"
 
-    print("live-captions desktop server")
+    print("Caption Guru desktop server")
     print(f"  engine:   {engine_desc}")
     print(f"  frontend: {web_dir or '(not built — see / for help)'}")
     print(f"  display:  {url}")

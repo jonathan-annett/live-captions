@@ -26,4 +26,4 @@ First public release.
 - PyInstaller bundles, per-platform GitHub Release zips. Models download on first run (kept out of the bundle).
 - Artifacts: Windows x64, Linux x64, macOS Apple Silicon. _macOS Intel ships separately as `v0.1.0-intel` (scarce Intel runners)._
 
-[Releases](https://github.com/jonathan-annett/live-captions/releases)
+[Releases](https://github.com/jonathan-annett/caption-guru/releases)

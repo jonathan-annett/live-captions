@@ -32,7 +32,7 @@ git tag v0.1.1-intel && git push origin v0.1.1-intel
 ## Local build
 ```bash
 pnpm --filter @captions/display build      # frontend the desktop app serves
-cd desktop && python packaging/build.py     # -> desktop/dist/live-captions-<target>.zip
+cd desktop && python packaging/build.py     # -> desktop/dist/caption-guru-<target>.zip
 ```
 
 ## Manual release (fallback when a runner is unavailable)
@@ -43,6 +43,6 @@ gh release create vX.Y.Z --notes "..." ./artifacts/**/*.zip
 ```
 
 ## Run notes
-- macOS bundles are **unsigned**: right-click → Open, or `xattr -dr com.apple.quarantine live-captions/`.
-- No native window? `live-captions serve --no-open`, then open `http://127.0.0.1:8765/?source=ws`.
-- Low-spec hardware: `live-captions serve --model tiny.en`.
+- macOS bundles are **unsigned**: right-click → Open, or `xattr -dr com.apple.quarantine caption-guru/`.
+- No native window? `caption-guru serve --no-open`, then open `http://127.0.0.1:8765/?source=ws`.
+- Low-spec hardware: `caption-guru serve --model tiny.en`.

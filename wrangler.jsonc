@@ -3,6 +3,8 @@
   // the built site AND proxies Hugging Face model files via /hf/* (see
   // packages/pwa/worker/index.js) so model downloads are same-origin (no CORS).
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Worker name kept as-is: caption.guru is bound to this Worker, so renaming
+  // would require moving the custom domain. Internal id only; not user-facing.
   "name": "live-captions",
   "compatibility_date": "2026-06-01",
   "main": "packages/pwa/worker/index.js",

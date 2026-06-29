@@ -50,8 +50,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: live-captions-${{ matrix.target }}
-          path: desktop/dist/live-captions-${{ matrix.target }}.zip
+          name: caption-guru-${{ matrix.target }}
+          path: desktop/dist/caption-guru-${{ matrix.target }}.zip
           if-no-files-found: error
 
   release:

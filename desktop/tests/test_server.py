@@ -59,4 +59,4 @@ def test_root_help_when_no_frontend():
     with TestClient(app) as client:
         r = client.get("/")
         assert r.status_code == 200
-        assert "live-captions server" in r.text
+        assert "Caption Guru server" in r.text

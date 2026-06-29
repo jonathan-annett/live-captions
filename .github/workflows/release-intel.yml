@@ -38,8 +38,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: live-captions-macos-intel
-          path: desktop/dist/live-captions-macos-intel.zip
+          name: caption-guru-macos-intel
+          path: desktop/dist/caption-guru-macos-intel.zip
           if-no-files-found: error
 
   release:

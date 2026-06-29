@@ -1,7 +1,7 @@
 """Build the desktop bundle and zip it for release.
 
 Runs PyInstaller against captions.spec, then zips the one-folder bundle into
-dist/live-captions-<target>.zip. Used locally and by the release CI matrix.
+dist/caption-guru-<target>.zip. Used locally and by the release CI matrix.
 
 The frontend must already be built (pnpm --filter @captions/display build).
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 
 DESKTOP = Path(__file__).resolve().parents[1]
 BUNDLE_PARENT = DESKTOP / "dist" / "bundle"
-BUNDLE = BUNDLE_PARENT / "live-captions"
+BUNDLE = BUNDLE_PARENT / "caption-guru"
 
 
 def detect_target() -> str:
@@ -48,7 +48,7 @@ def build() -> None:
 
 
 def zip_bundle(target: str) -> Path:
-    out = DESKTOP / "dist" / f"live-captions-{target}.zip"
+    out = DESKTOP / "dist" / f"caption-guru-{target}.zip"
     if out.exists():
         out.unlink()
     if platform.system() == "Windows":
@@ -66,7 +66,7 @@ def zip_bundle(target: str) -> Path:
         # `zip -y` keeps symlinks (mac frameworks) and the executable bit, which
         # Python's zipfile would flatten/strip.
         subprocess.run(
-            ["zip", "-r", "-y", "-q", str(out), "live-captions"],
+            ["zip", "-r", "-y", "-q", str(out), "caption-guru"],
             cwd=BUNDLE_PARENT,
             check=True,
         )

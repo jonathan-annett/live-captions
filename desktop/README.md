@@ -1,6 +1,6 @@
 # captions-desktop
 
-Desktop build of [live-captions](../README.md): a Python app that captures audio,
+Desktop build of [Caption Guru](../README.md): a Python app that captures audio,
 runs on-device ASR (faster-whisper / WhisperX, with an Apple-Silicon GPU backend),
 serves the shared web display + control UI over a local server, and shows the
 caption surface fullscreen via `pywebview` (HDMI output) with a Chrome-kiosk CLI
@@ -86,7 +86,7 @@ Build locally:
 pnpm --filter @captions/display build          # from repo root: build the frontend
 cd desktop
 uv pip install -e ".[server,audio,asr,mlx,desktop,package]"
-python packaging/build.py                       # -> dist/live-captions-<target>.zip
+python packaging/build.py                       # -> dist/caption-guru-<target>.zip
 ```
 
 Cut a release: push a tag and CI builds + attaches the per-platform zips to a
@@ -102,5 +102,5 @@ use faster-whisper; the Linux artifact is server + browser/kiosk (no native
 window). All include the bundled frontend.
 
 > **macOS Gatekeeper:** the bundles are unsigned, so first launch is blocked.
-> Right-click → Open, or run `xattr -dr com.apple.quarantine live-captions/`.
+> Right-click → Open, or run `xattr -dr com.apple.quarantine caption-guru/`.
 > Code signing/notarization is a future addition.

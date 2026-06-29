@@ -41,7 +41,7 @@ def build_app(
         yield
         controller.stop()
 
-    app = FastAPI(title="live-captions", lifespan=lifespan)
+    app = FastAPI(title="Caption Guru", lifespan=lifespan)
 
     @app.get("/history")
     async def history(since: Optional[float] = None) -> JSONResponse:
@@ -103,7 +103,7 @@ def build_app(
         @app.get("/")
         async def root() -> HTMLResponse:
             return HTMLResponse(
-                "<h1>live-captions server</h1><p>Frontend not built. Run "
+                "<h1>Caption Guru server</h1><p>Frontend not built. Run "
                 "<code>pnpm --filter @captions/display build</code>, then reload. "
                 "WebSocket: <code>/ws</code> · History: <code>/history</code></p>"
             )

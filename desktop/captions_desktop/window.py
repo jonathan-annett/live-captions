@@ -144,6 +144,6 @@ def launch_chrome_kiosk(url: str, monitor: int = 0) -> Optional[subprocess.Popen
         s = screens[monitor]
         if s["x"] is not None and s["y"] is not None:
             position = (int(s["x"]), int(s["y"]))
-    user_data_dir = tempfile.mkdtemp(prefix="live-captions-kiosk-")
+    user_data_dir = tempfile.mkdtemp(prefix="caption-guru-kiosk-")
     args = chrome_kiosk_args(chrome, url, position=position, user_data_dir=user_data_dir)
     return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
