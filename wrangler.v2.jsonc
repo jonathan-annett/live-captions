@@ -1,0 +1,22 @@
+{
+  // v2.caption.guru — the next-major BETA channel (see DEPLOY.md "Release
+  // channels"). One same-origin Worker: PWA assets + /hf proxy + CaptionRoom DO.
+  // Separate name + DO namespace from the prod Worker (root wrangler.jsonc,
+  // "live-captions" → caption.guru), so the beta is fully isolated.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "caption-guru-v2",
+  "compatibility_date": "2026-06-01",
+  "main": "packages/pwa/worker/v2.ts",
+  // Non-asset paths (/r/*, /hf/*) invoke the Worker; assets serve directly, with
+  // SPA fallback when the Worker delegates to env.ASSETS for an unknown path.
+  "assets": {
+    "directory": "./packages/pwa/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "CaptionRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CaptionRoom"] }],
+  "routes": [{ "pattern": "v2.caption.guru", "custom_domain": true }]
+}

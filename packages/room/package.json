@@ -3,7 +3,15 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Isolated CaptionRoom Durable Object — v2 audience/streaming transport (Phase A). NOT wired into the production caption.guru Worker.",
+  "description": "CaptionRoom Durable Object — v2 audience/streaming transport. Runs standalone (own Worker) or composed into the same-origin v2 Worker.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
@@ -15,6 +23,6 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
-    "wrangler": "^3.99.0"
+    "wrangler": "^4.0.0"
   }
 }

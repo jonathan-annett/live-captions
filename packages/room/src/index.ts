@@ -1,26 +1,28 @@
 import { CaptionRoom } from "./room.js";
 
 /**
- * Worker entry for the isolated CaptionRoom audience layer (v2 Phase A).
+ * CaptionRoom audience layer (v2).
+ *
+ * {@link handleRoomRequest} is the reusable router — it owns the `/r/*` routes
+ * and returns `null` for anything else, so it can be composed into a larger
+ * Worker (e.g. the same-origin v2 Worker that also serves the PWA + /hf). The
+ * default export wraps it as a standalone Worker for isolated dev/testing.
  *
  * Routes:
  *  - `POST /r/new`            → create a room; returns id + publish token + URLs
  *  - `GET  /r/:id/publish`    → WebSocket upgrade for the source (token required)
  *  - `GET  /r/:id/subscribe`  → WebSocket upgrade for audience (open)
- *
- * The room id is used directly as the Durable Object name, so any colo can route
- * to the same room instance. The publish token gates write access; subscribe is
- * open (link/QR) per the Phase-A defaults.
  */
 
 export { CaptionRoom };
 
-interface Env {
+export interface RoomEnv {
   ROOM: DurableObjectNamespace;
 }
 
-// Subscribe is a WebSocket (CORS-exempt); only /r/new is a browser fetch, so we
-// keep CORS permissive for it — room URLs are unguessable bearer capabilities.
+// Subscribe is a WebSocket (CORS-exempt); only /r/new is a browser fetch. When
+// the room is composed same-origin (v2) these never fire; they matter only if
+// the room is deployed standalone and reached cross-origin.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -29,43 +31,59 @@ const CORS = {
 
 const ROOM_ROUTE = /^\/r\/([A-Za-z0-9_-]+)\/(publish|subscribe)$/;
 
+/**
+ * Handle the room's `/r/*` routes. Returns a `Response` for room requests, or
+ * `null` if the request isn't a room route (so a host Worker can fall through).
+ */
+export async function handleRoomRequest(
+  request: Request,
+  env: RoomEnv,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+
+  if (!url.pathname.startsWith("/r/")) return null;
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { headers: CORS });
+  }
+
+  if (url.pathname === "/r/new" && request.method === "POST") {
+    const id = makeRoomId();
+    const token = makeToken();
+    const stub = env.ROOM.get(env.ROOM.idFromName(id));
+    const init = await stub.fetch(`https://room/init?token=${token}`);
+    if (!init.ok) {
+      return new Response("room init failed", { status: 502, headers: CORS });
+    }
+    const body = {
+      id,
+      publishToken: token,
+      publishUrl: wsUrl(url.origin, `/r/${id}/publish?token=${token}`),
+      subscribeUrl: wsUrl(url.origin, `/r/${id}/subscribe`),
+    };
+    return new Response(JSON.stringify(body), {
+      headers: { "content-type": "application/json", ...CORS },
+    });
+  }
+
+  const match = ROOM_ROUTE.exec(url.pathname);
+  if (match) {
+    const id = match[1]!;
+    const action = match[2]!;
+    const stub = env.ROOM.get(env.ROOM.idFromName(id));
+    // Forward the upgrade (and ?token=) to the room DO unchanged.
+    return stub.fetch(new Request(`https://room/${action}${url.search}`, request));
+  }
+
+  return null;
+}
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS });
-    }
-
-    if (url.pathname === "/r/new" && request.method === "POST") {
-      const id = makeRoomId();
-      const token = makeToken();
-      const stub = env.ROOM.get(env.ROOM.idFromName(id));
-      const init = await stub.fetch(`https://room/init?token=${token}`);
-      if (!init.ok) {
-        return new Response("room init failed", { status: 502, headers: CORS });
-      }
-      const body = {
-        id,
-        publishToken: token,
-        publishUrl: wsUrl(url.origin, `/r/${id}/publish?token=${token}`),
-        subscribeUrl: wsUrl(url.origin, `/r/${id}/subscribe`),
-      };
-      return new Response(JSON.stringify(body), {
-        headers: { "content-type": "application/json", ...CORS },
-      });
-    }
-
-    const match = ROOM_ROUTE.exec(url.pathname);
-    if (match) {
-      const id = match[1]!;
-      const action = match[2]!;
-      const stub = env.ROOM.get(env.ROOM.idFromName(id));
-      // Forward the upgrade (and ?token=) to the room DO unchanged.
-      return stub.fetch(new Request(`https://room/${action}${url.search}`, request));
-    }
-
-    return new Response("not found", { status: 404, headers: CORS });
+  async fetch(request: Request, env: RoomEnv): Promise<Response> {
+    return (
+      (await handleRoomRequest(request, env)) ??
+      new Response("not found", { status: 404, headers: CORS })
+    );
   },
 };
 
