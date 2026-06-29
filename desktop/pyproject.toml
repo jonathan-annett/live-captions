@@ -20,8 +20,11 @@ dependencies = [
 server = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.30",
-  "sounddevice>=0.4.7",
   "numpy>=1.26",
+]
+# Mic capture (needs PortAudio); separate so server/tests install without it.
+audio = [
+  "sounddevice>=0.4.7",
 ]
 asr = [
   "faster-whisper>=1.0.3",
@@ -31,6 +34,7 @@ desktop = [
 ]
 dev = [
   "pytest>=8.0",
+  "httpx>=0.27",
 ]
 
 [project.scripts]
