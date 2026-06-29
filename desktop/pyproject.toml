@@ -40,6 +40,9 @@ dev = [
   "pytest>=8.0",
   "httpx>=0.27",
 ]
+package = [
+  "pyinstaller>=6.10",
+]
 
 [project.scripts]
 captions = "captions_desktop.cli:main"

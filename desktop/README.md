@@ -73,3 +73,34 @@ stream over `/ws`; the history/scrollback substrate is at `/history`.
 
 > pywebview is needed for the fullscreen window (`pip install -e ".[desktop]"`).
 > Without it, `serve` automatically falls back to Chrome kiosk.
+
+## Packaging / releases
+
+Bundled with PyInstaller into a one-folder app, zipped per platform. `torch` is
+excluded (mlx-whisper declares it but doesn't use it for transcription), saving
+~2 GB per build.
+
+Build locally:
+
+```bash
+pnpm --filter @captions/display build          # from repo root: build the frontend
+cd desktop
+uv pip install -e ".[server,audio,asr,mlx,desktop,package]"
+python packaging/build.py                       # -> dist/live-captions-<target>.zip
+```
+
+Cut a release: push a tag and CI builds + attaches the per-platform zips to a
+GitHub Release (`.github/workflows/release.yml`, matrix: Windows x64, macOS
+Intel, macOS Apple Silicon, Linux x64):
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+Per platform: macOS arm64 includes the **MLX** GPU backend; Intel mac / Windows
+use faster-whisper; the Linux artifact is server + browser/kiosk (no native
+window). All include the bundled frontend.
+
+> **macOS Gatekeeper:** the bundles are unsigned, so first launch is blocked.
+> Right-click → Open, or run `xattr -dr com.apple.quarantine live-captions/`.
+> Code signing/notarization is a future addition.
