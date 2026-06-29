@@ -1,13 +1,17 @@
 import { safeParseServerMessage } from "@captions/protocol";
-import type { CaptionSource } from "./types.js";
+import type { CaptionSource, ConnectionState } from "./types.js";
 
 /**
  * Receives captions over a WebSocket (desktop mode). Auto-reconnects with a
  * capped backoff so an unattended on-air display recovers if the server blips.
+ *
+ * Reports {@link ConnectionState} transitions so a viewer can show live /
+ * reconnecting status.
  */
 export class WebSocketSource implements CaptionSource {
   private ws: WebSocket | null = null;
-  private onMessage: Parameters<CaptionSource["connect"]>[0] | null = null;
+  private onMessage: ((msg: import("@captions/protocol").ServerMessage) => void) | null = null;
+  private onState: ((state: ConnectionState) => void) | null = null;
   private closed = false;
   private retryMs = 500;
   private readonly maxRetryMs = 5000;
@@ -15,8 +19,13 @@ export class WebSocketSource implements CaptionSource {
 
   constructor(private readonly url: string) {}
 
-  connect(onMessage: Parameters<CaptionSource["connect"]>[0]): void {
+  connect(
+    onMessage: (msg: import("@captions/protocol").ServerMessage) => void,
+    onState?: (state: ConnectionState) => void,
+  ): void {
     this.onMessage = onMessage;
+    this.onState = onState ?? null;
+    this.setState("connecting");
     this.open();
   }
 
@@ -29,6 +38,7 @@ export class WebSocketSource implements CaptionSource {
     };
     this.ws.onopen = () => {
       this.retryMs = 500;
+      this.setState("open");
     };
     this.ws.onclose = () => this.scheduleReconnect();
     this.ws.onerror = () => this.ws?.close();
@@ -36,8 +46,13 @@ export class WebSocketSource implements CaptionSource {
 
   private scheduleReconnect(): void {
     if (this.closed) return;
+    this.setState("reconnecting");
     this.timer = setTimeout(() => this.open(), this.retryMs);
     this.retryMs = Math.min(this.retryMs * 2, this.maxRetryMs);
+  }
+
+  private setState(state: ConnectionState): void {
+    this.onState?.(state);
   }
 
   disconnect(): void {
@@ -45,5 +60,6 @@ export class WebSocketSource implements CaptionSource {
     if (this.timer) clearTimeout(this.timer);
     this.ws?.close();
     this.ws = null;
+    this.setState("closed");
   }
 }

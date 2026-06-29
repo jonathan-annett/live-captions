@@ -21,8 +21,11 @@ export class RoomSource implements CaptionSource {
     return new RoomSource(roomSubscribeUrl(roomId, base));
   }
 
-  connect(onMessage: Parameters<CaptionSource["connect"]>[0]): void {
-    this.ws.connect(onMessage);
+  connect(
+    onMessage: Parameters<CaptionSource["connect"]>[0],
+    onState?: Parameters<CaptionSource["connect"]>[1],
+  ): void {
+    this.ws.connect(onMessage, onState);
   }
 
   disconnect(): void {

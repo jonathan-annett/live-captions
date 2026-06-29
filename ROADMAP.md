@@ -37,3 +37,8 @@ Tiers, building on that one backbone:
   layout with settings portable PWA↔desktop both ways. (Model *picker* may land with v2;
   download/management is later.)
 - **Offline** — optional model-bundled builds for air-gapped venues.
+- **Crowdsourced moderation** — trusted viewers designated as moderators; a
+  consensus vote (e.g. 3/4 majority) commits a correction to the canonical
+  transcript and pushes it to everyone. Generalizes single-operator correction;
+  rides the existing upsert-by-id + `locked` backbone (adds a moderator role +
+  propose/vote protocol + quorum in the room DO).

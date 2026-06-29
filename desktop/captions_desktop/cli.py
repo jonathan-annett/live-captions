@@ -34,6 +34,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         default=None,
         help="custom terms to bias toward: comma-separated, or @path/to/file",
     )
+    serve.add_argument(
+        "--publish-url",
+        default=None,
+        help="CaptionRoom publish URL (token-gated) to relay captions to an "
+        "audience room, e.g. wss://v2.caption.guru/r/<id>/publish?token=<tok>",
+    )
 
     # Display output
     serve.add_argument("--monitor", type=int, default=0, help="monitor index (HDMI out)")
@@ -86,7 +92,9 @@ def _serve(args: argparse.Namespace) -> None:
         controller.set_dictionary(terms)
 
     web_dir = find_web_dir(args.web)
-    app = build_app(hub, controller, web_dir=web_dir)
+    app = build_app(
+        hub, controller, web_dir=web_dir, room_publish_url=args.publish_url
+    )
 
     transparent = args.background == "transparent"
     base = f"http://{args.host}:{args.port}"
@@ -97,6 +105,8 @@ def _serve(args: argparse.Namespace) -> None:
     print(f"  frontend: {web_dir or '(not built — see / for help)'}")
     print(f"  display:  {url}")
     print(f"  ws:       {base}/ws   history: {base}/history")
+    if args.publish_url:
+        print(f"  room:     relaying captions to {args.publish_url}")
 
     if args.no_open:
         import uvicorn

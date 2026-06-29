@@ -1,11 +1,20 @@
 import { BroadcastChannelSource } from "./broadcast.js";
 import { MockSource } from "./mock.js";
 import { RoomSource, roomSubscribeUrl } from "./room.js";
+import { RoomPublisher, roomPublishUrl } from "./roomPublisher.js";
 import type { CaptionSource } from "./types.js";
 import { WebSocketSource } from "./websocket.js";
 
-export type { CaptionSource } from "./types.js";
-export { BroadcastChannelSource, MockSource, RoomSource, roomSubscribeUrl, WebSocketSource };
+export type { CaptionSource, ConnectionState } from "./types.js";
+export {
+  BroadcastChannelSource,
+  MockSource,
+  RoomPublisher,
+  roomPublishUrl,
+  RoomSource,
+  roomSubscribeUrl,
+  WebSocketSource,
+};
 
 /**
  * Build the caption source from URL params, so the same display page serves

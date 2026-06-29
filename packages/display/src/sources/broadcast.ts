@@ -7,12 +7,17 @@ export class BroadcastChannelSource implements CaptionSource {
 
   constructor(private readonly name: string) {}
 
-  connect(onMessage: Parameters<CaptionSource["connect"]>[0]): void {
+  connect(
+    onMessage: Parameters<CaptionSource["connect"]>[0],
+    onState?: Parameters<CaptionSource["connect"]>[1],
+  ): void {
     this.channel = new BroadcastChannel(this.name);
     this.channel.onmessage = (ev) => {
       const msg = safeParseServerMessage(ev.data);
       if (msg) onMessage(msg);
     };
+    // Same-origin channel: effectively always connected.
+    onState?.("open");
   }
 
   disconnect(): void {

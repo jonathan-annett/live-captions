@@ -1,6 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { exportTranscript, type ExportFormat } from "@captions/protocol";
+  import {
+    exportTranscript,
+    type ExportFormat,
+    type ServerMessage,
+  } from "@captions/protocol";
+  import {
+    RoomPublisher,
+    roomPublishUrl,
+    type ConnectionState,
+  } from "@captions/display";
   import { Captioner } from "./engine/captioner.js";
   import { UiStore } from "./uiStore.svelte.js";
 
@@ -22,6 +31,33 @@
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
+
+  // Optional room publishing (the operator "Start room" UI lands in a later
+  // phase; for now a publish target can be supplied via the page URL:
+  //   ?publish=<full publish URL>   or   ?room=<id>&token=<tok>[&base=<origin>]
+  // When set, the local caption stream is teed to the CaptionRoom.
+  const publishUrl = resolvePublishUrl();
+  let publisher: RoomPublisher | null = null;
+  let publishState = $state<ConnectionState | null>(null);
+
+  function resolvePublishUrl(): string | null {
+    const params = new URLSearchParams(location.search);
+    const direct = params.get("publish");
+    if (direct) return direct;
+    const room = params.get("room");
+    const token = params.get("token");
+    if (room && token) {
+      return roomPublishUrl(room, token, params.get("base") ?? undefined);
+    }
+    return null;
+  }
+
+  // Single funnel for the captioner's output: mirror to the UI, and (when
+  // publishing) tee to the room.
+  function sink(msg: ServerMessage): void {
+    store.apply(msg);
+    publisher?.publish(msg);
+  }
 
   function dictionaryTerms(): string[] {
     return dictionaryText
@@ -108,12 +144,16 @@
   });
 
   async function start() {
+    if (publishUrl) {
+      publisher = new RoomPublisher(publishUrl, (s) => (publishState = s));
+      publisher.start();
+    }
     captioner = new Captioner({
       model,
       channel: CHANNEL,
       deviceId: deviceId || undefined,
       dictionary: dictionaryTerms(),
-      onUpdate: store.apply,
+      onUpdate: sink,
       onProgress: onModelProgress,
     });
     running = true;
@@ -135,6 +175,9 @@
   function stop() {
     captioner?.stop();
     captioner = null;
+    publisher?.stop();
+    publisher = null;
+    publishState = null;
     running = false;
   }
 
@@ -156,6 +199,11 @@
   <header>
     <h1>{appName}</h1>
     <span class="pill {store.status.state}">{statusLabel}</span>
+    {#if publishUrl}
+      <span class="pill" class:listening={publishState === "open"}>
+        room: {publishState ?? "idle"}
+      </span>
+    {/if}
   </header>
 
   <section class="controls">

@@ -17,7 +17,11 @@ export class MockSource implements CaptionSource {
   private timers: ReturnType<typeof setTimeout>[] = [];
   private stopped = false;
 
-  connect(onMessage: (msg: ServerMessage) => void): void {
+  connect(
+    onMessage: (msg: ServerMessage) => void,
+    onState?: (state: import("./types.js").ConnectionState) => void,
+  ): void {
+    onState?.("open");
     let clock = 0; // seconds from session start
     let delay = 400;
     const at = (ms: number, fn: () => void) => {

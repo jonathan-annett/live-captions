@@ -32,13 +32,22 @@ def build_app(
     controller: Controller,
     web_dir: Optional[Path] = None,
     autostart: bool = True,
+    room_publish_url: Optional[str] = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         hub.bind_loop(asyncio.get_running_loop())
         if autostart:
             controller.start()
+        publisher = None
+        if room_publish_url:
+            from .room_publisher import RoomPublisher
+
+            publisher = RoomPublisher(hub, room_publish_url)
+            publisher.start()
         yield
+        if publisher is not None:
+            await publisher.stop()
         controller.stop()
 
     app = FastAPI(title="Caption Guru", lifespan=lifespan)

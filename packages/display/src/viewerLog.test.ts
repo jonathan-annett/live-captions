@@ -1,6 +1,7 @@
 import type { CaptionSegment } from "@captions/protocol";
 import { describe, expect, it } from "vitest";
 import { roomSubscribeUrl } from "./sources/room.js";
+import { roomPublishUrl } from "./sources/roomPublisher.js";
 import { ViewerLog } from "./viewerLog.js";
 
 const seg = (id: string, text: string, start = 0, end = 1): CaptionSegment => ({
@@ -83,5 +84,19 @@ describe("roomSubscribeUrl", () => {
 
   it("url-encodes the room id", () => {
     expect(roomSubscribeUrl("a b", "http://x")).toBe("ws://x/r/a%20b/subscribe");
+  });
+});
+
+describe("roomPublishUrl", () => {
+  it("includes the token and normalizes scheme", () => {
+    expect(roomPublishUrl("abc", "tok123", "https://v2.caption.guru")).toBe(
+      "wss://v2.caption.guru/r/abc/publish?token=tok123",
+    );
+  });
+
+  it("url-encodes the room id and token", () => {
+    expect(roomPublishUrl("a b", "t/k", "http://x")).toBe(
+      "ws://x/r/a%20b/publish?token=t%2Fk",
+    );
   });
 });

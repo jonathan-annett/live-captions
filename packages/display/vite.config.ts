@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vite";
 
@@ -9,5 +10,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     target: "es2022",
+    rollupOptions: {
+      input: {
+        // On-air display (desktop/PWA) and the audience viewer ship together.
+        main: resolve(import.meta.dirname, "index.html"),
+        viewer: resolve(import.meta.dirname, "viewer.html"),
+      },
+    },
   },
 });
