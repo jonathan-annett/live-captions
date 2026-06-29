@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { exportTranscript, type ExportFormat } from "@captions/protocol";
   import { Captioner } from "./engine/captioner.js";
   import { UiStore } from "./uiStore.svelte.js";
 
@@ -14,8 +15,31 @@
   let mics = $state<MediaDeviceInfo[]>([]);
   let deviceId = $state<string>("");
   let model = $state(MODELS[1]!.id);
+  let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
+
+  function dictionaryTerms(): string[] {
+    return dictionaryText
+      .split(/[\n,]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+
+  // Apply dictionary edits live while captioning.
+  $effect(() => {
+    captioner?.setDictionary(dictionaryTerms());
+  });
+
+  function download(format: ExportFormat) {
+    const { body, mime, filename } = exportTranscript(store.finals, format);
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   onMount(async () => {
     try {
@@ -31,6 +55,7 @@
       model,
       channel: CHANNEL,
       deviceId: deviceId || undefined,
+      dictionary: dictionaryTerms(),
       onUpdate: store.apply,
     });
     running = true;
@@ -104,6 +129,24 @@
         <button class="start" onclick={start}>Start captioning</button>
       {/if}
       <button onclick={openDisplay}>Open display ↗</button>
+    </div>
+  </section>
+
+  <section class="extras">
+    <label class="dict">
+      Custom dictionary
+      <textarea
+        bind:value={dictionaryText}
+        rows="2"
+        placeholder="Names, jargon, acronyms — comma or newline separated"
+      ></textarea>
+    </label>
+
+    <div class="export">
+      <span>Export</span>
+      <button onclick={() => download("txt")} disabled={!store.finals.length}>TXT</button>
+      <button onclick={() => download("srt")} disabled={!store.finals.length}>SRT</button>
+      <button onclick={() => download("vtt")} disabled={!store.finals.length}>VTT</button>
     </div>
   </section>
 
@@ -206,6 +249,41 @@
     font-size: 0.8rem;
     color: #777;
     margin: 1rem 0;
+  }
+  .extras {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    align-items: flex-end;
+    margin: 0.5rem 0 1rem;
+  }
+  .dict {
+    flex: 1;
+    min-width: 16rem;
+  }
+  textarea {
+    background: #161616;
+    color: #eee;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 0.5rem;
+    width: 100%;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .export {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: #aaa;
+  }
+  .export button {
+    padding: 0.45rem 0.7rem;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .preview {
     margin-top: 1rem;

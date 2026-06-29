@@ -17,8 +17,9 @@ export class UiStore {
         break;
       case "final":
         this.partial = null;
+        // Keep the full session transcript for export (preview slices the tail).
         this.finals.push(msg.segment);
-        if (this.finals.length > 50) this.finals = this.finals.slice(-50);
+        if (this.finals.length > 10000) this.finals = this.finals.slice(-10000);
         break;
       case "partial":
         this.partial = msg.segment;

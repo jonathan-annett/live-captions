@@ -42,6 +42,17 @@ def test_ws_request_history_replies_to_caller():
             assert ws.receive_json()["type"] == "history"
 
 
+def test_export_endpoint_returns_attachment():
+    hub = CaptionHub()
+    app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)
+    with TestClient(app) as client:
+        r = client.get("/export?format=vtt")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/vtt")
+        assert "attachment" in r.headers["content-disposition"]
+        assert r.text.startswith("WEBVTT")
+
+
 def test_root_help_when_no_frontend():
     hub = CaptionHub()
     app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)

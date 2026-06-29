@@ -245,7 +245,8 @@ class LiveStreamer:
         seg_id = self._current_id
         start = self._utter_start / self.sample_rate
         end = self._sample_count / self.sample_rate
-        text = self.engine.transcribe(samples)
+        hotwords = ", ".join(self.dictionary) if self.dictionary else None
+        text = self.engine.transcribe(samples, hotwords=hotwords)
         if not text:
             return
         seg = CaptionSegment(id=seg_id, text=text, start=start, end=end)

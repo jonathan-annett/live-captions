@@ -67,7 +67,7 @@ class FasterWhisperEngine(ASREngine):
             device=device,
         )
 
-    def transcribe(self, samples: Any) -> str:
+    def transcribe(self, samples: Any, hotwords: Optional[str] = None) -> str:
         if self._model is None:
             return ""
         segments, _info = self._model.transcribe(
@@ -76,6 +76,7 @@ class FasterWhisperEngine(ASREngine):
             beam_size=1,
             vad_filter=False,
             condition_on_previous_text=False,
+            hotwords=hotwords or None,
         )
         return " ".join(s.text.strip() for s in segments).strip()
 

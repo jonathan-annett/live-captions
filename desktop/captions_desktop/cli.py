@@ -23,6 +23,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve.add_argument("--mic", type=int, default=None, help="input device index")
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
+    serve.add_argument(
+        "--dictionary",
+        default=None,
+        help="custom terms to bias toward: comma-separated, or @path/to/file",
+    )
 
     # Display output
     serve.add_argument("--monitor", type=int, default=0, help="monitor index (HDMI out)")
@@ -70,6 +75,10 @@ def _serve(args: argparse.Namespace) -> None:
         controller = LiveStreamer(hub, engine, device=args.mic)
         engine_desc = f"faster-whisper {args.model} ({args.device})"
 
+    terms = _parse_dictionary(args.dictionary)
+    if terms:
+        controller.set_dictionary(terms)
+
     web_dir = find_web_dir(args.web)
     app = build_app(hub, controller, web_dir=web_dir)
 
@@ -111,6 +120,17 @@ def _serve(args: argparse.Namespace) -> None:
     finally:
         server.should_exit = True
         thread.join(timeout=3.0)
+
+
+def _parse_dictionary(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    if value.startswith("@"):
+        with open(value[1:], encoding="utf-8") as fh:
+            raw = fh.read()
+    else:
+        raw = value
+    return [t.strip() for t in raw.replace("\n", ",").split(",") if t.strip()]
 
 
 def _apply_background(hub: CaptionHub, args: argparse.Namespace) -> None:

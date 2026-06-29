@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .export import export_transcript
 from .hub import CaptionHub
 from .protocol import (
     ControlCommand,
@@ -47,6 +48,15 @@ def build_app(
         segs = hub.history(since)
         return JSONResponse(
             {"segments": [s.model_dump(by_alias=True, exclude_none=True) for s in segs]}
+        )
+
+    @app.get("/export")
+    async def export(format: str = "txt") -> Response:
+        body, mime, filename = export_transcript(hub.history(), format)
+        return Response(
+            content=body,
+            media_type=mime,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @app.websocket("/ws")

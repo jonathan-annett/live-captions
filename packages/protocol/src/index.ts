@@ -13,6 +13,8 @@
  */
 import { z } from "zod";
 
+export * from "./export.js";
+
 /** Bumped on breaking changes to the message shapes below. */
 export const PROTOCOL_VERSION = 1;
 

@@ -1,6 +1,7 @@
 import type { EngineStatus, ServerMessage } from "@captions/protocol";
 import { EnergyVAD } from "../audio/vad.js";
 import workletUrl from "../audio/pcm-worklet.js?url";
+import { correctText } from "./dictionary.js";
 import type { WorkerEvent } from "./messages.js";
 
 const TARGET_RATE = 16000;
@@ -11,6 +12,8 @@ export interface CaptionerOptions {
   channel: string;
   /** mic deviceId from enumerateDevices, or undefined for default */
   deviceId?: string;
+  /** event-specific names/jargon to bias recognized text toward */
+  dictionary?: string[];
   /** called for every emitted message (UI preview) */
   onUpdate: (msg: ServerMessage) => void;
 }
@@ -43,13 +46,24 @@ export class Captioner {
 
   private sampleCount = 0;
   private pending = new Map<string, (text: string) => void>();
+  private dictionary: string[] = [];
 
   // derived sample thresholds (set on start once the real rate is known)
   private prerollCap = 0;
   private partialEvery = 0;
   private maxUtter = 0;
 
-  constructor(private readonly opts: CaptionerOptions) {}
+  constructor(private readonly opts: CaptionerOptions) {
+    this.dictionary = opts.dictionary ?? [];
+  }
+
+  setDictionary(terms: string[]): void {
+    this.dictionary = terms;
+  }
+
+  private correct(text: string): string {
+    return this.dictionary.length ? correctText(text, this.dictionary) : text;
+  }
 
   async start(): Promise<void> {
     this.channel = new BroadcastChannel(this.opts.channel);
@@ -167,7 +181,9 @@ export class Captioner {
     this.utterSamples = 0;
     if (snap.samples.length === 0) return;
     void this.rpc(snap.samples).then((text) => {
-      if (text) this.emit({ type: "final", segment: { ...snap.meta, text } });
+      if (text) {
+        this.emit({ type: "final", segment: { ...snap.meta, text: this.correct(text) } });
+      }
     });
   }
 
@@ -177,7 +193,10 @@ export class Captioner {
     void this.rpc(snap.samples).then((text) => {
       this.partialBusy = false;
       if (text && this.currentId === snap.meta.id) {
-        this.emit({ type: "partial", segment: { ...snap.meta, text } });
+        this.emit({
+          type: "partial",
+          segment: { ...snap.meta, text: this.correct(text) },
+        });
       }
     });
   }
