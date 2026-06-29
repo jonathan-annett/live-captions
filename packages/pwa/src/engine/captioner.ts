@@ -3,6 +3,7 @@ import { EnergyVAD } from "../audio/vad.js";
 import workletUrl from "../audio/pcm-worklet.js?url";
 import { correctText } from "./dictionary.js";
 import type { WorkerEvent } from "./messages.js";
+import { isDegenerate, isLikelySpeech } from "./sanitize.js";
 
 const TARGET_RATE = 16000;
 
@@ -182,8 +183,10 @@ export class Captioner {
     this.utter = [];
     this.utterSamples = 0;
     if (snap.samples.length === 0) return;
+    // Don't decode silence/near-silence — that's what triggers phantom phrases.
+    if (!isLikelySpeech(snap.samples, TARGET_RATE)) return;
     void this.rpc(snap.samples).then((text) => {
-      if (text) {
+      if (text && !isDegenerate(text)) {
         this.emit({ type: "final", segment: { ...snap.meta, text: this.correct(text) } });
       }
     });
@@ -192,9 +195,13 @@ export class Captioner {
   private requestPartial(): void {
     this.partialBusy = true;
     const snap = this.snapshot();
+    if (!isLikelySpeech(snap.samples, TARGET_RATE)) {
+      this.partialBusy = false;
+      return;
+    }
     void this.rpc(snap.samples).then((text) => {
       this.partialBusy = false;
-      if (text && this.currentId === snap.meta.id) {
+      if (text && !isDegenerate(text) && this.currentId === snap.meta.id) {
         this.emit({
           type: "partial",
           segment: { ...snap.meta, text: this.correct(text) },
