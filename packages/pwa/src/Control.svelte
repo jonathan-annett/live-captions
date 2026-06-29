@@ -63,20 +63,21 @@
   // The control owns the on-air display config (pushed over the channel). The
   // QR overlay only renders on the display in chroma-key mode (by design).
   const configChannel = new BroadcastChannel(CHANNEL);
-  let displayConfig = $state<DisplayConfig>({ ...DEFAULT_DISPLAY_CONFIG });
   let bgKind = $state<Background["kind"]>(DEFAULT_DISPLAY_CONFIG.background.kind);
   let bgColor = $state<string>("#00b140");
+  let qr = $state<DisplayConfig["qr"]>(undefined);
 
-  function pushConfig(): void {
-    configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
-  }
-
-  // Re-derive background + push whenever the operator changes it.
-  $effect(() => {
+  // Derived from its parts (never mutated in place) so updating it can't loop.
+  const displayConfig = $derived.by<DisplayConfig>(() => {
     const background: Background =
       bgKind === "transparent" ? { kind: "transparent" } : { kind: bgKind, color: bgColor };
-    displayConfig = { ...displayConfig, background };
-    pushConfig();
+    return { ...DEFAULT_DISPLAY_CONFIG, background, ...(qr ? { qr } : {}) };
+  });
+
+  // Push to the on-air display whenever the config changes (write-only side
+  // effect — no reactive state is written here, so no update loop).
+  $effect(() => {
+    configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
   });
 
   function resolvePublishUrl(): string | null {
@@ -100,12 +101,9 @@
       publisher?.stop();
       publisher = new RoomPublisher(r.publishUrl, (s) => (publishState = s));
       publisher.start();
-      // Advertise the join QR on the display (shown only in chroma mode).
-      displayConfig = {
-        ...displayConfig,
-        qr: { url: joinUrl, x: 72, y: 6, size: 24 },
-      };
-      pushConfig();
+      // Advertise the join QR on the display (shown only in chroma mode);
+      // the $effect picks this up and pushes the new config.
+      qr = { url: joinUrl, x: 72, y: 6, size: 24 };
     } catch (err) {
       roomError = String(err);
     }
@@ -115,9 +113,7 @@
     publisher?.stop();
     publisher = null;
     publishState = null;
-    const { qr: _qr, ...rest } = displayConfig;
-    displayConfig = rest;
-    pushConfig();
+    qr = undefined;
     room = null;
   }
 
