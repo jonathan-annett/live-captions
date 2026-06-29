@@ -1,10 +1,13 @@
-# Cloudflare Pages headers.
-# Cross-origin isolation enables multi-threaded WASM (SharedArrayBuffer) for the
-# WebGPU/WASM Whisper engine. `credentialless` lets us still fetch models from a
-# cross-origin CDN (e.g. Hugging Face) without them needing CORP headers.
-/*
-  Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: credentialless
+# Cloudflare Pages/Workers headers.
+#
+# NOTE: We intentionally do NOT set COOP/COEP (cross-origin isolation). Isolation
+# would enable multi-threaded WASM (SharedArrayBuffer), but it also makes the
+# browser reject Hugging Face model files (tokenizer.json, config.json, *.onnx)
+# with CORS errors, because that cross-origin CDN doesn't send the resource-policy
+# headers isolation then requires. WebGPU (our primary path) needs no isolation,
+# and the WASM fallback still works single-threaded — so dropping isolation makes
+# model loading reliable. If we later want threaded WASM, self-host/proxy the
+# models same-origin and re-add COOP/COEP.
 
 # Vite fingerprints asset filenames, so they're safe to cache forever.
 /assets/*
