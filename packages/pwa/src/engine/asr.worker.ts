@@ -8,6 +8,11 @@ import type { WorkerEvent, WorkerRequest } from "./messages.js";
 
 // Models are fetched from the Hugging Face hub and cached by the browser.
 env.allowLocalModels = false;
+// Route model downloads through our own origin (/hf/* proxy) instead of
+// huggingface.co directly. Same-origin = no CORS, plus edge caching. Both the
+// Cloudflare Worker (prod) and the Vite dev server proxy /hf -> huggingface.co.
+env.remoteHost = self.location.origin;
+env.remotePathTemplate = "hf/{model}/resolve/{revision}/";
 
 // Try WebGPU first (fast), fall back to WASM (compatible). The dtype split keeps
 // the encoder accurate while quantizing the decoder for speed/size on WebGPU.

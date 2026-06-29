@@ -1,14 +1,15 @@
 {
-  // Deploys the PWA as a Cloudflare Worker with static assets (the modern
-  // replacement for Pages). No Worker script — assets-only — so it behaves like
-  // a static site host. `_headers` and `_redirects` in the asset dir are honored.
+  // PWA deployed as a Cloudflare Worker with static assets. The Worker serves
+  // the built site AND proxies Hugging Face model files via /hf/* (see
+  // packages/pwa/worker/index.js) so model downloads are same-origin (no CORS).
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "live-captions",
   "compatibility_date": "2026-06-01",
+  "main": "packages/pwa/worker/index.js",
   "assets": {
-    // Built by `pnpm --filter @captions/pwa build`. Path is relative to this file.
     "directory": "./packages/pwa/dist",
-    // Serve index.html for unknown routes (SPA), matching the _redirects fallback.
+    "binding": "ASSETS",
+    // Serve index.html for unknown routes (SPA).
     "not_found_handling": "single-page-application"
   }
 }

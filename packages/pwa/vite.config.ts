@@ -11,6 +11,17 @@ export default defineConfig({
   // Don't pre-bundle the workspace Svelte lib or the (large) ASR runtime.
   optimizeDeps: { exclude: ["@captions/display", "@huggingface/transformers"] },
   worker: { format: "es" },
+  // Mirror the production Worker's /hf proxy so model loading works in dev too.
+  server: {
+    proxy: {
+      "/hf": {
+        target: "https://huggingface.co",
+        changeOrigin: true,
+        followRedirects: true,
+        rewrite: (p) => p.replace(/^\/hf/, ""),
+      },
+    },
+  },
   build: {
     outDir: "dist",
     target: "es2022",
