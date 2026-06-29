@@ -7,21 +7,51 @@
   const CHANNEL = "captions";
   const MODELS = [
     { id: "onnx-community/whisper-tiny.en", label: "tiny.en (fastest)" },
-    { id: "onnx-community/whisper-base.en", label: "base.en (balanced)" },
-    { id: "onnx-community/whisper-small.en", label: "small.en (most accurate)" },
+    { id: "onnx-community/whisper-small.en", label: "small.en (accurate)" },
+    {
+      id: "onnx-community/whisper-large-v3-turbo",
+      label: "large-v3-turbo (best · large download · WebGPU)",
+    },
   ];
 
   const appName = location.hostname.endsWith("caption.guru")
     ? "Caption Guru"
     : "Live Captions";
 
+  // Persist the operator's model + mic choices so a reload doesn't snap back to
+  // the default (which was skewing tests when it landed on a weaker model).
+  const LS_MODEL = "cg.model";
+  const LS_DEVICE = "cg.deviceId";
+  const lsGet = (k: string): string | null => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const lsSet = (k: string, v: string): void => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {
+      /* private mode / storage disabled */
+    }
+  };
+
   const store = new UiStore();
   let mics = $state<MediaDeviceInfo[]>([]);
-  let deviceId = $state<string>("");
-  let model = $state(MODELS[1]!.id);
+  const storedModel = lsGet(LS_MODEL);
+  let deviceId = $state<string>(lsGet(LS_DEVICE) ?? "");
+  // Restore the saved model only if it's still a known option; else default to
+  // small.en (MODELS[1]).
+  let model = $state(
+    MODELS.some((m) => m.id === storedModel) ? storedModel! : MODELS[1]!.id,
+  );
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
+
+  $effect(() => lsSet(LS_MODEL, model));
+  $effect(() => lsSet(LS_DEVICE, deviceId));
 
   function dictionaryTerms(): string[] {
     return dictionaryText
@@ -102,6 +132,12 @@
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       mics = devices.filter((d) => d.kind === "audioinput");
+      // If the saved mic is gone (and the list has real ids), fall back to
+      // default so start() can't fail on an exact-device constraint.
+      if (deviceId && mics.length && mics.every((m) => m.deviceId) &&
+          !mics.some((m) => m.deviceId === deviceId)) {
+        deviceId = "";
+      }
     } catch {
       /* labels populate after first permission grant */
     }

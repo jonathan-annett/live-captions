@@ -14,12 +14,17 @@ env.allowLocalModels = false;
 env.remoteHost = self.location.origin;
 env.remotePathTemplate = "hf/{model}/resolve/{revision}/";
 
-// Try WebGPU first (fast), fall back to WASM (compatible). The dtype split keeps
-// the encoder accurate while quantizing the decoder for speed/size on WebGPU.
-const DEVICE_PLANS: { device: "webgpu" | "wasm"; dtype: unknown }[] = [
-  { device: "webgpu", dtype: { encoder_model: "fp16", decoder_model_merged: "q4" } },
-  { device: "wasm", dtype: "q8" },
-];
+// Try WebGPU first (fast), fall back to WASM (compatible).
+const DEVICES = ["webgpu", "wasm"] as const;
+
+// Per-model precision. Large/turbo models are pinned to q4f16 on WebGPU to keep
+// the download ~0.5–0.7 GB (fp16 weights would be ~1.5 GB); the small models
+// keep the accurate-encoder / quantized-decoder split.
+function dtypeFor(model: string, device: (typeof DEVICES)[number]): unknown {
+  const large = /large|turbo/i.test(model);
+  if (device === "wasm") return large ? "q4" : "q8";
+  return large ? "q4f16" : { encoder_model: "fp16", decoder_model_merged: "q4" };
+}
 
 let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
 
@@ -36,7 +41,7 @@ const post = (msg: WorkerEvent, transfer: Transferable[] = []) =>
 
 async function load(model: string): Promise<void> {
   let lastErr: unknown;
-  for (const plan of DEVICE_PLANS) {
+  for (const device of DEVICES) {
     // Aggregate per-file download progress into a single loaded/total.
     const files = new Map<string, { loaded: number; total: number }>();
     const progress_callback = (p: {
@@ -57,13 +62,13 @@ async function load(model: string): Promise<void> {
       post({ type: "progress", loaded: l, total: t });
     };
     try {
-      post({ type: "loading", message: `Loading ${model} on ${plan.device}…` });
+      post({ type: "loading", message: `Loading ${model} on ${device}…` });
       transcriber = await loadPipeline("automatic-speech-recognition", model, {
-        device: plan.device,
-        dtype: plan.dtype,
+        device,
+        dtype: dtypeFor(model, device),
         progress_callback,
       });
-      post({ type: "ready", device: plan.device, model });
+      post({ type: "ready", device, model });
       return;
     } catch (err) {
       lastErr = err;
