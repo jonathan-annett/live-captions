@@ -9,14 +9,16 @@ Ships in two forms:
 
 The on-air surface is a **fullscreen web page** designed to feed a vision switcher over **HDMI** (primary), or as a transparent **LAN browser source** for OBS/vMix.
 
+A **v2 audience layer** (in progress) lets people follow the live captions on their own phones — the operator starts a room and shares a link or on-screen QR, with scroll-back over the recent transcript.
+
 ## Repository layout
 
 ```
 packages/
   protocol/   # shared caption protocol (TS types + runtime validation)
-  display/    # fullscreen caption renderer (shared by PWA + desktop)
-  control/    # operator/settings UI
-  pwa/        # browser-only build (transformers.js, WebGPU/WASM)
+  display/    # fullscreen caption renderer + audience viewer (shared by PWA + desktop)
+  pwa/        # browser-only build (transformers.js, WebGPU/WASM) + operator control
+  room/       # v2 audience-layer transport (CaptionRoom Durable Object) — isolated
 desktop/      # Python app (FastAPI + faster-whisper, pywebview)
 ```
 
@@ -24,23 +26,11 @@ The **display surface and caption protocol are shared**; only the ASR engine and
 
 ## Status
 
-Early development. See [the build plan](#roadmap) below.
+**v1 shipped** as v0.1.0 — the PWA is live at [caption.guru](https://caption.guru) and the
+desktop app ships as per-platform release zips. **v2**, the audience / streaming layer (live
+rooms, mobile scrollback viewer, operator QR), is in progress.
 
-## Roadmap
-
-- **M1** Monorepo skeleton + shared caption protocol ✅
-- **M2** Shared display surface ✅
-- **M3** PWA in-browser engine (transformers.js WebGPU/WASM) ✅
-- **M4** Desktop server + faster-whisper streaming ✅
-- **M5** pywebview fullscreen HDMI output + CLI kiosk ✅
-- **M6** Transcript export + custom dictionary ✅ — **v1 feature-complete**
-- **M7** Apple-Silicon GPU backend (MLX-Whisper) ✅
-- **M8** Packaging — PyInstaller bundles + per-platform GitHub Release zips (PWA already deployed) ✅
-
-### Planned / future
-
-- Live translation, speaker diarization, NDI output.
-- **Audience scrollback** — mobile-friendly read-only view to scroll back over the last ~30 minutes (joins over LAN via URL/QR). The caption protocol is an append-only timestamped log so this lands without rework.
+See **[ROADMAP.md](ROADMAP.md)** for the plan and **[WHATSNEW.md](WHATSNEW.md)** for shipped changes.
 
 ## Development
 
