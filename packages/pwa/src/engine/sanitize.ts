@@ -40,19 +40,45 @@ export function peakRms(
   return peak;
 }
 
+/** Default speech-gate thresholds (overridable per-call / via URL for tuning). */
+export const MIN_PEAK_RMS = 0.012;
+export const MIN_SPEECH_MS = 250;
+
+export interface ClipAnalysis {
+  /** clip duration in ms */
+  ms: number;
+  /** loudest ~100ms-window RMS */
+  peak: number;
+  longEnough: boolean;
+  loudEnough: boolean;
+  /** long enough AND loud enough → plausibly speech, safe to decode */
+  isSpeech: boolean;
+}
+
+/** Diagnose a clip against the speech gate (the values + the decision). */
+export function analyzeClip(
+  samples: Float32Array,
+  sampleRate: number,
+  minPeakRms = MIN_PEAK_RMS,
+  minMs = MIN_SPEECH_MS,
+): ClipAnalysis {
+  const ms = (samples.length / sampleRate) * 1000;
+  const peak = peakRms(samples, sampleRate);
+  const longEnough = ms >= minMs;
+  const loudEnough = peak >= minPeakRms;
+  return { ms, peak, longEnough, loudEnough, isSpeech: longEnough && loudEnough };
+}
+
 /**
  * Speech gate before sending a clip to the recognizer: it must be long enough
  * and have a loud-enough peak to plausibly contain speech. Silent / near-silent
  * clips are exactly what make Whisper hallucinate, so we never decode them.
- * Thresholds are conservative (kept lenient so real, quiet speech still passes)
- * and live here as named constants for easy tuning (future config panel).
  */
 export function isLikelySpeech(
   samples: Float32Array,
   sampleRate: number,
-  minPeakRms = 0.012,
-  minMs = 250,
+  minPeakRms = MIN_PEAK_RMS,
+  minMs = MIN_SPEECH_MS,
 ): boolean {
-  if ((samples.length / sampleRate) * 1000 < minMs) return false;
-  return peakRms(samples, sampleRate) >= minPeakRms;
+  return analyzeClip(samples, sampleRate, minPeakRms, minMs).isSpeech;
 }

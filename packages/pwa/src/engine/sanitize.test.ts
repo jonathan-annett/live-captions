@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDegenerate, isLikelySpeech, peakRms } from "./sanitize.js";
+import { analyzeClip, isDegenerate, isLikelySpeech, peakRms } from "./sanitize.js";
 
 describe("isDegenerate", () => {
   it("rejects pure symbol spam (the reported hallucinations)", () => {
@@ -41,5 +41,14 @@ describe("peakRms / isLikelySpeech", () => {
 
   it("passes a loud-enough clip of sufficient length", () => {
     expect(isLikelySpeech(tone(500), SR)).toBe(true);
+  });
+
+  it("analyzeClip reports the why (long/loud) and honors overrides", () => {
+    const quiet = analyzeClip(tone(500, 0.005), SR); // below default 0.012
+    expect(quiet.longEnough).toBe(true);
+    expect(quiet.loudEnough).toBe(false);
+    expect(quiet.isSpeech).toBe(false);
+    // A lower threshold (as ?minrms would set) lets the same clip through.
+    expect(analyzeClip(tone(500, 0.005), SR, 0.002).isSpeech).toBe(true);
   });
 });
