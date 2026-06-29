@@ -1,0 +1,20 @@
+{
+  "name": "@captions/room",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated CaptionRoom Durable Object — v2 audience/streaming transport (Phase A). NOT wired into the production caption.guru Worker.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "node scripts/verify.mjs"
+  },
+  "dependencies": {
+    "@captions/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "wrangler": "^3.99.0"
+  }
+}

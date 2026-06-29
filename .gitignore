@@ -5,6 +5,10 @@ dist/
 *.tsbuildinfo
 .vite/
 
+# Cloudflare / Wrangler local state + secrets
+.wrangler/
+.dev.vars
+
 # Python
 __pycache__/
 *.py[cod]
@@ -36,3 +40,5 @@ sessions/
 # Env
 .env
 .env.local
+*.env
+cf-token.env

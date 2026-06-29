@@ -1,0 +1,14 @@
+{
+  // ISOLATED v2 audience-layer Worker. Deliberately SEPARATE from the production
+  // PWA Worker (root wrangler.jsonc, name "live-captions" bound to caption.guru).
+  // Phase A is built and tested here in isolation; it is NOT wired into the
+  // production Worker until the audience layer is ready.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "caption-room",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "CaptionRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CaptionRoom"] }]
+}

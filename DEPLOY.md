@@ -13,6 +13,26 @@ Hosted on **Cloudflare** as a Worker with static assets (`wrangler.jsonc`,
 - SPA fallback + cache headers via `not_found_handling` + `packages/pwa/public/_headers`.
 - Custom domain is managed in the Cloudflare dashboard.
 
+## Release channels — stable vs. the next major (`vN.caption.guru`)
+
+A standing convention for **all** major-version work:
+
+- **Stable** lives on the apex **`caption.guru`** (auto-deploys from `main`, as above).
+- **The next major in development** lives on a **`vN.caption.guru`** subdomain — e.g.
+  `v2.caption.guru` while v1 is the apex. This is the bleeding-edge, tester-facing channel.
+- We use a **subdomain (separate origin), not a `/v2` path**, for full containment: its own
+  service-worker scope, PWA install identity, and storage — so a broken beta can never poison
+  the stable origin. The subdomain Worker serves its **own `/hf`** proxy, so model fetches stay
+  same-origin within it.
+- **Promotion = cutover.** When `vN` ships, its build becomes the apex `caption.guru` (the new
+  stable), and **`vN.caption.guru` is retired with a 301 redirect to `https://caption.guru`** —
+  so testers who revisit bookmarked beta URLs are automatically moved onto the new norm. Then
+  `v(N+1).caption.guru` spins up as the next beta channel.
+
+Containment trade-offs to remember: separate origins mean tester **settings don't carry across**
+(use the planned export/import), and the `caption-room` WebSocket is **cross-origin** from the beta
+(the room Worker validates the `Origin` header rather than relying on CORS).
+
 ## Desktop releases (GitHub Releases)
 PyInstaller one-folder bundles, zipped per platform. `torch` is excluded; models download
 on first run. Builds require **Python 3.11/3.12** (no faster-whisper/MLX wheels on 3.14).

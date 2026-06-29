@@ -32,4 +32,8 @@ Tiers, building on that one backbone:
 - **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency tuning.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
+- **Native config screen** — GUI for audio device, fonts, theming, **and ASR model**
+  (default-model picker + download/manage models) instead of CLI-only flags; PWA-identical
+  layout with settings portable PWA↔desktop both ways. (Model *picker* may land with v2;
+  download/management is later.)
 - **Offline** — optional model-bundled builds for air-gapped venues.
