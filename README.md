@@ -34,8 +34,8 @@ Early development. See [the build plan](#roadmap) below.
 - **M4** Desktop server + faster-whisper streaming ✅
 - **M5** pywebview fullscreen HDMI output + CLI kiosk ✅
 - **M6** Transcript export + custom dictionary ✅ — **v1 feature-complete**
-- **M7** Apple-Silicon GPU backend (MLX-Whisper / whisper.cpp Metal)
-- **M8** Packaging (PyInstaller bundles, PWA deploy)
+- **M7** Apple-Silicon GPU backend (MLX-Whisper) ✅
+- **M8** Packaging (PyInstaller bundles, PWA deploy) ← _remaining_
 
 ### Planned / future
 

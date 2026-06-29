@@ -18,8 +18,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve = sub.add_parser("serve", help="run the caption server + display")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
-    serve.add_argument("--model", default="base.en", help="faster-whisper model")
-    serve.add_argument("--device", default="auto", help="auto|cpu|cuda")
+    serve.add_argument("--model", default="base.en", help="model name or HF repo")
+    serve.add_argument(
+        "--engine",
+        default="auto",
+        choices=["auto", "faster-whisper", "mlx"],
+        help="ASR backend (auto: MLX on Apple Silicon, else faster-whisper)",
+    )
+    serve.add_argument("--device", default="auto", help="auto|cpu|cuda (faster-whisper)")
     serve.add_argument("--mic", type=int, default=None, help="input device index")
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
@@ -69,11 +75,11 @@ def _serve(args: argparse.Namespace) -> None:
         controller = MockProducer(hub)
         engine_desc = "mock (demo)"
     else:
-        from .engines.faster_whisper import FasterWhisperEngine
+        from .engines import create_engine
 
-        engine = FasterWhisperEngine(model=args.model, device=args.device)
+        engine = create_engine(args.engine, model=args.model, device=args.device)
         controller = LiveStreamer(hub, engine, device=args.mic)
-        engine_desc = f"faster-whisper {args.model} ({args.device})"
+        engine_desc = f"{engine.__class__.__name__} ({args.model})"
 
     terms = _parse_dictionary(args.dictionary)
     if terms:

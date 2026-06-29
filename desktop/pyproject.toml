@@ -29,6 +29,10 @@ audio = [
 asr = [
   "faster-whisper>=1.0.3",
 ]
+# Apple-Silicon GPU backend (macOS arm64 only).
+mlx = [
+  "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 desktop = [
   "pywebview>=5.1",
 ]

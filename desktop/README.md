@@ -21,6 +21,12 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[server,audio,asr,desktop,dev]"
 ```
 
+On Apple Silicon, add the GPU backend (`faster-whisper` is CPU-only on macOS):
+
+```bash
+pip install -e ".[server,audio,asr,mlx,desktop,dev]"
+```
+
 Extras: `server` (FastAPI + numpy), `audio` (sounddevice/PortAudio mic capture),
 `asr` (faster-whisper), `desktop` (pywebview), `dev` (pytest + httpx). For just
 the server + tests (no PortAudio / CTranslate2): `pip install -e ".[server,dev]"`.
@@ -36,8 +42,15 @@ pnpm --filter @captions/display build
 ```bash
 captions serve                       # live captions + fullscreen display window
 captions serve --model small.en      # pick a model (tiny/base/small .en)
+captions serve --engine mlx          # force the Apple-Silicon GPU backend
+captions serve --engine faster-whisper --device cuda
 captions serve --demo                # scripted captions, no mic/ASR (great for testing)
 ```
+
+`--engine auto` (default) uses **MLX** (Apple GPU) on Apple Silicon when
+installed, otherwise **faster-whisper** (CPU, or CUDA on NVIDIA). `--model`
+accepts a short name (`base.en`) or a full HF repo; for MLX the short name maps
+to `mlx-community/whisper-<model>-mlx`.
 
 By default `serve` opens the display **fullscreen via pywebview** (the HDMI output
 to feed your switcher). Display options:
