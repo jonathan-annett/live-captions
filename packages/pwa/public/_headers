@@ -1,0 +1,11 @@
+# Cloudflare Pages headers.
+# Cross-origin isolation enables multi-threaded WASM (SharedArrayBuffer) for the
+# WebGPU/WASM Whisper engine. `credentialless` lets us still fetch models from a
+# cross-origin CDN (e.g. Hugging Face) without them needing CORP headers.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+
+# Vite fingerprints asset filenames, so they're safe to cache forever.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

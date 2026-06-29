@@ -1,0 +1,2 @@
+# SPA fallback: existing static files are served first; everything else renders the app.
+/*    /index.html   200
