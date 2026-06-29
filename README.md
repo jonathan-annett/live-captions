@@ -9,6 +9,8 @@ Ships in two forms:
 
 The on-air surface is a **fullscreen web page** designed to feed a vision switcher over **HDMI** (primary), or as a transparent **LAN browser source** for OBS/vMix.
 
+A **v2 audience layer** (in progress) lets people follow the live captions on their own phones — the operator starts a room and shares a link or on-screen QR, with scroll-back over the recent transcript.
+
 ## Repository layout
 
 ```
