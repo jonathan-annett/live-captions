@@ -2,6 +2,23 @@
 
 Notable changes per release. (Format loosely follows Keep a Changelog.)
 
+## Unreleased
+
+**PWA — caption quality**
+- **Hallucination suppression.** Whisper used to invent text on silence/non-speech
+  (repeated symbols like `>>>>`/`[`, or phantom phrases like "I'm sorry"). Now a
+  **no-speech gate** skips silent/near-silent audio before it's ever transcribed,
+  a **degenerate-output filter** drops symbol-only junk, and the on-air display
+  **never renders blank lines**.
+- Removed generation params (`no_repeat_ngram_size` / `repetition_penalty`) that
+  were derailing Whisper into single-token output (`"["`, `"W"`) on real speech.
+
+**PWA — model picker**
+- Dropped **base.en** (consistently the weakest on WebGPU); kept **tiny.en** +
+  **small.en**; added **large-v3-turbo** (best accuracy, pinned to q4f16 ≈ 0.6 GB).
+- Each model now shows its **one-time download size** in the picker, and your
+  **selected model + microphone are remembered** across reloads.
+
 ## v0.1.0 — 2026-06-29
 
 First public release.

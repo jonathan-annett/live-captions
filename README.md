@@ -30,7 +30,12 @@ The **display surface and caption protocol are shared**; only the ASR engine and
 desktop app ships as per-platform release zips. **v2**, the audience / streaming layer (live
 rooms, mobile scrollback viewer, operator QR), is in progress.
 
-See **[ROADMAP.md](ROADMAP.md)** for the plan and **[WHATSNEW.md](WHATSNEW.md)** for shipped changes.
+**Recent improvements** (unreleased, in the PWA): on-device **hallucination
+suppression** (no more phantom phrases or symbol spam on silence), and a reworked
+**model picker** — dropped the weak `base.en`, added `large-v3-turbo`, each option
+shows its download size, and your model + mic choices are remembered.
+
+See **[ROADMAP.md](ROADMAP.md)** for the plan and **[WHATSNEW.md](WHATSNEW.md)** for changes.
 
 ## Development
 
