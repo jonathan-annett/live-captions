@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "!v*-intel"] # Intel is built separately by release-intel.yml
   workflow_dispatch: # build artifacts on demand (no release)
 
 permissions:
@@ -18,9 +18,6 @@ jobs:
         include:
           - os: windows-latest
             target: windows-x64
-            extras: "server,audio,asr,desktop,package"
-          - os: macos-13 # Intel
-            target: macos-intel
             extras: "server,audio,asr,desktop,package"
           - os: macos-14 # Apple Silicon
             target: macos-arm64
