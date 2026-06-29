@@ -1,10 +1,25 @@
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
+const root = import.meta.dirname;
+
 export default defineConfig({
+  plugins: [svelte()],
   // Relative base so the app works at the Pages root or any subpath.
   base: "./",
+  // Don't pre-bundle the workspace Svelte lib or the (large) ASR runtime.
+  optimizeDeps: { exclude: ["@captions/display", "@huggingface/transformers"] },
+  worker: { format: "es" },
   build: {
     outDir: "dist",
     target: "es2022",
+    rollupOptions: {
+      input: {
+        // Two same-origin pages so they can share a BroadcastChannel.
+        main: resolve(root, "index.html"), // operator control
+        display: resolve(root, "display.html"), // on-air surface
+      },
+    },
   },
 });

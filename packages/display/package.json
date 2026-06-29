@@ -2,6 +2,15 @@
   "name": "@captions/display",
   "version": "0.0.0",
   "type": "module",
+  "svelte": "./src/lib.ts",
+  "exports": {
+    ".": {
+      "svelte": "./src/lib.ts",
+      "types": "./src/lib.ts",
+      "default": "./src/lib.ts"
+    },
+    "./App.svelte": "./src/App.svelte"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

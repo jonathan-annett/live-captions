@@ -28,10 +28,10 @@ Early development. See [the build plan](#roadmap) below.
 
 ## Roadmap
 
-- **M1** Monorepo skeleton + shared caption protocol ← _in progress_
-- **M2** Shared display surface
-- **M3** PWA in-browser engine (transformers.js WebGPU/WASM)
-- **M4** Desktop server + faster-whisper streaming
+- **M1** Monorepo skeleton + shared caption protocol ✅
+- **M2** Shared display surface ✅
+- **M3** PWA in-browser engine (transformers.js WebGPU/WASM) ✅
+- **M4** Desktop server + faster-whisper streaming ← _next_
 - **M5** pywebview fullscreen HDMI output + CLI kiosk
 - **M6** Transcript export + custom dictionary
 - **M7** Apple-Silicon GPU backend (MLX-Whisper / whisper.cpp Metal)
