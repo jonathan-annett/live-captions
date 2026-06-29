@@ -16,6 +16,8 @@ export interface CaptionerOptions {
   dictionary?: string[];
   /** called for every emitted message (UI preview) */
   onUpdate: (msg: ServerMessage) => void;
+  /** model-download progress (bytes), for a progress UI */
+  onProgress?: (p: { loaded: number; total: number }) => void;
 }
 
 /**
@@ -232,6 +234,9 @@ export class Captioner {
     switch (ev.type) {
       case "loading":
         this.emitStatus({ state: "loading", message: ev.message });
+        break;
+      case "progress":
+        this.opts.onProgress?.({ loaded: ev.loaded, total: ev.total });
         break;
       case "ready":
         this.emitStatus({

@@ -41,6 +41,59 @@
     URL.revokeObjectURL(url);
   }
 
+  // --- model download progress ---
+  let modelDl = $state<{ loaded: number; total: number; startedAt: number } | null>(
+    null,
+  );
+  let nowTick = $state(0);
+
+  function onModelProgress(p: { loaded: number; total: number }) {
+    modelDl = modelDl
+      ? { ...modelDl, loaded: p.loaded, total: p.total }
+      : { loaded: p.loaded, total: p.total, startedAt: performance.now() };
+  }
+
+  // Clear the bar once the model is ready (or we stop / error out).
+  $effect(() => {
+    if (store.status.state !== "loading") modelDl = null;
+  });
+
+  // Tick so elapsed/ETA update smoothly between progress events.
+  $effect(() => {
+    if (!modelDl) return;
+    const id = setInterval(() => (nowTick = performance.now()), 250);
+    return () => clearInterval(id);
+  });
+
+  const dlInfo = $derived.by(() => {
+    if (!modelDl) return null;
+    void nowTick; // reactive dependency for the ticking clock
+    const { loaded, total, startedAt } = modelDl;
+    const pct = total > 0 ? Math.min(100, (loaded / total) * 100) : 0;
+    const elapsedMs = performance.now() - startedAt;
+    const rate = elapsedMs > 0 ? loaded / (elapsedMs / 1000) : 0;
+    const etaMs = rate > 0 && total > loaded ? ((total - loaded) / rate) * 1000 : 0;
+    return { pct, loaded, total, elapsedMs, etaMs };
+  });
+
+  function fmtBytes(n: number): string {
+    if (!n) return "0 MB";
+    const mb = n / (1024 * 1024);
+    return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(n / 1024).toFixed(0)} KB`;
+  }
+  function fmtTime(ms: number): string {
+    if (!isFinite(ms) || ms < 0) return "—";
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  function cancelDownload() {
+    captioner?.stop();
+    captioner = null;
+    running = false;
+    modelDl = null;
+  }
+
   onMount(async () => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -57,6 +110,7 @@
       deviceId: deviceId || undefined,
       dictionary: dictionaryTerms(),
       onUpdate: store.apply,
+      onProgress: onModelProgress,
     });
     running = true;
     try {
@@ -131,6 +185,29 @@
       <button onclick={openDisplay}>Open display ↗</button>
     </div>
   </section>
+
+  {#if dlInfo}
+    <section class="download">
+      <div class="dlhead">
+        <strong>Downloading speech model…</strong>
+        <button class="cancel" onclick={cancelDownload}>Cancel</button>
+      </div>
+      <div class="bar"><div class="fill" style:width="{dlInfo.pct}%"></div></div>
+      <div class="dlmeta">
+        <span>{dlInfo.pct.toFixed(0)}%</span>
+        <span>{fmtBytes(dlInfo.loaded)} / {fmtBytes(dlInfo.total)}</span>
+        <span>elapsed {fmtTime(dlInfo.elapsedMs)}</span>
+        <span>ETA {fmtTime(dlInfo.etaMs)}</span>
+      </div>
+      <p class="dlexplain">
+        The “model” is the neural network that turns speech into text. It’s large
+        (tens of MB) because it packs the patterns of spoken language learned from
+        thousands of hours of audio. This download happens <strong>only once</strong> —
+        it’s cached in your browser, so future sessions start instantly. Nothing is
+        uploaded; the model runs entirely on your device.
+      </p>
+    </section>
+  {/if}
 
   <section class="extras">
     <label class="dict">
@@ -249,6 +326,50 @@
     font-size: 0.8rem;
     color: #777;
     margin: 1rem 0;
+  }
+  .download {
+    margin: 1rem 0;
+    padding: 1rem 1.2rem;
+    background: #0e1726;
+    border: 1px solid #1f3350;
+    border-radius: 8px;
+  }
+  .dlhead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+  }
+  .cancel {
+    background: #2a2a2a;
+    color: #ddd;
+    padding: 0.35rem 0.8rem;
+  }
+  .bar {
+    height: 10px;
+    background: #1b2740;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .fill {
+    height: 100%;
+    background: linear-gradient(90deg, #1f6feb, #5f91ff);
+    transition: width 0.2s ease;
+  }
+  .dlmeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #9fb4d4;
+    font-variant-numeric: tabular-nums;
+  }
+  .dlexplain {
+    font-size: 0.8rem;
+    color: #8aa0c0;
+    line-height: 1.5;
+    margin: 0.8rem 0 0;
   }
   .extras {
     display: flex;

@@ -37,11 +37,31 @@ const post = (msg: WorkerEvent, transfer: Transferable[] = []) =>
 async function load(model: string): Promise<void> {
   let lastErr: unknown;
   for (const plan of DEVICE_PLANS) {
+    // Aggregate per-file download progress into a single loaded/total.
+    const files = new Map<string, { loaded: number; total: number }>();
+    const progress_callback = (p: {
+      status: string;
+      file?: string;
+      loaded?: number;
+      total?: number;
+    }) => {
+      if (!p.file || typeof p.total !== "number") return;
+      const loaded = p.status === "done" ? p.total : (p.loaded ?? 0);
+      files.set(p.file, { loaded, total: p.total });
+      let l = 0;
+      let t = 0;
+      for (const v of files.values()) {
+        l += v.loaded;
+        t += v.total;
+      }
+      post({ type: "progress", loaded: l, total: t });
+    };
     try {
       post({ type: "loading", message: `Loading ${model} on ${plan.device}…` });
       transcriber = await loadPipeline("automatic-speech-recognition", model, {
         device: plan.device,
         dtype: plan.dtype,
+        progress_callback,
       });
       post({ type: "ready", device: plan.device, model });
       return;

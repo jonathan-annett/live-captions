@@ -24,6 +24,12 @@ export interface LoadingEvent {
   message: string;
 }
 
+export interface ProgressEvent {
+  type: "progress";
+  loaded: number; // aggregate bytes downloaded
+  total: number; // aggregate bytes expected
+}
+
 export interface ResultEvent {
   type: "result";
   reqId: string;
@@ -36,4 +42,9 @@ export interface ErrorEvent {
   reqId?: string;
 }
 
-export type WorkerEvent = ReadyEvent | LoadingEvent | ResultEvent | ErrorEvent;
+export type WorkerEvent =
+  | ReadyEvent
+  | LoadingEvent
+  | ProgressEvent
+  | ResultEvent
+  | ErrorEvent;
