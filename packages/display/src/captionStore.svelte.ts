@@ -22,10 +22,14 @@ export class CaptionStore {
   apply = (msg: ServerMessage): void => {
     switch (msg.type) {
       case "partial":
-        this.partial = msg.segment;
+        // Ignore blank/whitespace partials so they can't wipe a good line.
+        if (msg.segment.text.trim()) this.partial = msg.segment;
         break;
       case "final":
+        // A finalize still clears its partial, but a blank final is never
+        // buffered (it would eat a maxLines slot and look like the screen clearing).
         if (this.partial?.id === msg.segment.id) this.partial = null;
+        if (!msg.segment.text.trim()) break;
         this.segments.push(msg.segment);
         if (this.segments.length > MAX_BUFFER) {
           this.segments = this.segments.slice(-MAX_BUFFER);
@@ -49,11 +53,11 @@ export class CaptionStore {
 
   /** Lines to render: trailing finals plus the partial, bounded by maxLines. */
   get lines(): { text: string; partial: boolean }[] {
-    const out: { text: string; partial: boolean }[] = this.segments.map((s) => ({
-      text: s.text,
-      partial: false,
-    }));
-    if (this.partial && this.config.showPartial) {
+    // Defensive: never render an empty line (e.g. a blank slipping in via history).
+    const out: { text: string; partial: boolean }[] = this.segments
+      .filter((s) => s.text.trim() !== "")
+      .map((s) => ({ text: s.text, partial: false }));
+    if (this.partial && this.config.showPartial && this.partial.text.trim()) {
       out.push({ text: this.partial.text, partial: true });
     }
     return out.slice(-this.config.maxLines);
