@@ -11,6 +11,10 @@
     { id: "onnx-community/whisper-small.en", label: "small.en (most accurate)" },
   ];
 
+  const appName = location.hostname.endsWith("caption.guru")
+    ? "Caption Guru"
+    : "Live Captions";
+
   const store = new UiStore();
   let mics = $state<MediaDeviceInfo[]>([]);
   let deviceId = $state<string>("");
@@ -150,7 +154,7 @@
 
 <main>
   <header>
-    <h1>Live Captions</h1>
+    <h1>{appName}</h1>
     <span class="pill {store.status.state}">{statusLabel}</span>
   </header>
 
