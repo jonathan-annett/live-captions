@@ -88,10 +88,10 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
       // English-only (.en) models need no language/task; harmless if multilingual.
       chunk_length_s: 30,
       return_timestamps: false,
-      // Anti-hallucination: break Whisper's repetition loops on non-speech audio
-      // (the ">>>>" symbol spam and "I'm sorry"×N phantom phrases) at decode time.
-      no_repeat_ngram_size: 3,
-      repetition_penalty: 1.15,
+      // NOTE: no_repeat_ngram_size/repetition_penalty were tried here to break
+      // repetition loops, but they derail Whisper on real speech (collapsing
+      // output to a single token like "[" or "W"). Silence hallucinations are
+      // handled instead by the no-speech gate + degenerate filter in captioner.ts.
     });
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
