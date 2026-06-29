@@ -24,7 +24,7 @@ const MIN_RMS = PARAMS.has("minrms") ? Number(PARAMS.get("minrms")) : MIN_PEAK_R
 const MIN_MS = PARAMS.has("minms") ? Number(PARAMS.get("minms")) : MIN_SPEECH_MS;
 if (DEBUG) {
   // eslint-disable-next-line no-console
-  console.debug(`[cap] no-speech gate: peak≥${MIN_RMS} over ≥${MIN_MS}ms`);
+  console.log(`[cap] no-speech gate: peak≥${MIN_RMS} over ≥${MIN_MS}ms`);
 }
 
 export interface CaptionerOptions {
@@ -146,6 +146,10 @@ export class Captioner {
     this.sampleCount += frame.length;
     const ev = this.vad.process(frame);
 
+    if (DEBUG && ev) {
+      const heldMs = (this.utterSamples / this.rate) * 1000;
+      console.log(`[cap] vad ${ev}${ev === "end" ? ` (held ${heldMs.toFixed(0)}ms)` : ""}`);
+    }
     if (ev === "start") this.startUtterance();
 
     if (this.inUtterance) {
@@ -212,7 +216,7 @@ export class Captioner {
     }
     void this.rpc(snap.samples).then((text) => {
       const degen = isDegenerate(text);
-      if (DEBUG) console.debug(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
+      if (DEBUG) console.log(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
       if (text && !degen) {
         this.emit({ type: "final", segment: { ...snap.meta, text: this.correct(text) } });
       } else {
@@ -249,7 +253,7 @@ export class Captioner {
 
   private log(kind: "final" | "partial", a: import("./sanitize.js").ClipAnalysis): void {
     if (!DEBUG) return;
-    console.debug(
+    console.log(
       `[cap] ${kind} clip dur=${a.ms.toFixed(0)}ms peak=${a.peak.toFixed(4)} ` +
         `long=${a.longEnough} loud=${a.loudEnough} → speech=${a.isSpeech}`,
     );
@@ -261,7 +265,7 @@ export class Captioner {
     a: import("./sanitize.js").ClipAnalysis,
   ): void {
     if (!DEBUG) return;
-    console.debug(`[cap] DROP ${kind} (${reason}) peak=${a.peak.toFixed(4)} dur=${a.ms.toFixed(0)}ms`);
+    console.log(`[cap] DROP ${kind} (${reason}) peak=${a.peak.toFixed(4)} dur=${a.ms.toFixed(0)}ms`);
   }
 
   private snapshot(): {
