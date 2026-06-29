@@ -42,6 +42,10 @@ Tiers, building on that one backbone:
   download/management is later.) Also a tunable **ASR window size** (latency ↔ context
   trade-off) surfaced as a friendly control.
 - **Offline** — optional model-bundled builds for air-gapped venues.
+- **Model cache: persist + portability** — request persistent browser storage so the
+  (~0.6 GB) cached model isn't evicted; export/import the cached model as one file to move
+  it to a new machine without re-downloading. Browser (ONNX) and native (CTranslate2/MLX)
+  weights aren't interchangeable, but native↔native (zip the model cache dir) is.
 - **Audience Q&A** — app users submit questions anchored to a transcript excerpt;
   the speaker swipes through them on a stage tablet (question + tagged excerpt),
   answers, and can project a question via the overlay. Leverages the canonical
