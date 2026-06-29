@@ -5,12 +5,15 @@
   import { UiStore } from "./uiStore.svelte.js";
 
   const CHANNEL = "captions";
+  // `size` is the approximate one-time download (cached after first use), shown
+  // in the picker so the cost is clear before choosing.
   const MODELS = [
-    { id: "onnx-community/whisper-tiny.en", label: "tiny.en (fastest)" },
-    { id: "onnx-community/whisper-small.en", label: "small.en (accurate)" },
+    { id: "onnx-community/whisper-tiny.en", label: "tiny.en — fastest", size: "~100 MB" },
+    { id: "onnx-community/whisper-small.en", label: "small.en — accurate", size: "~300 MB" },
     {
       id: "onnx-community/whisper-large-v3-turbo",
-      label: "large-v3-turbo (best · large download · WebGPU)",
+      label: "large-v3-turbo — best",
+      size: "~0.6 GB · WebGPU",
     },
   ];
 
@@ -46,6 +49,7 @@
   let model = $state(
     MODELS.some((m) => m.id === storedModel) ? storedModel! : MODELS[1]!.id,
   );
+  const selectedModel = $derived(MODELS.find((m) => m.id === model));
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
@@ -211,9 +215,14 @@
       Model
       <select bind:value={model} disabled={running}>
         {#each MODELS as m (m.id)}
-          <option value={m.id}>{m.label}</option>
+          <option value={m.id}>{m.label} · {m.size}</option>
         {/each}
       </select>
+      {#if selectedModel}
+        <small class="hint-inline">
+          {selectedModel.size} download, once — then cached on this device.
+        </small>
+      {/if}
     </label>
 
     <div class="buttons">
@@ -366,6 +375,12 @@
     font-size: 0.8rem;
     color: #777;
     margin: 1rem 0;
+  }
+  .hint-inline {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #888;
   }
   .download {
     margin: 1rem 0;
