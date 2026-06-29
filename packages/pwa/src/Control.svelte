@@ -19,11 +19,18 @@
   import { UiStore } from "./uiStore.svelte.js";
 
   const CHANNEL = "captions";
+  // `size` is the approximate one-time download (cached after first use), shown
+  // in the picker so the cost is clear before choosing.
   const MODELS = [
-    { id: "onnx-community/whisper-tiny.en", label: "tiny.en (fastest)" },
-    { id: "onnx-community/whisper-base.en", label: "base.en (balanced)" },
-    { id: "onnx-community/whisper-small.en", label: "small.en (most accurate)" },
+    { id: "onnx-community/whisper-tiny.en", label: "tiny.en — fastest", size: "~100 MB" },
+    { id: "onnx-community/whisper-small.en", label: "small.en — accurate", size: "~300 MB" },
+    {
+      id: "onnx-community/whisper-large-v3-turbo",
+      label: "large-v3-turbo — best",
+      size: "~0.6 GB · WebGPU",
+    },
   ];
+  const selectedModel = $derived(MODELS.find((m) => m.id === model));
 
   const appName = location.hostname.endsWith("caption.guru")
     ? "Caption Guru"
@@ -332,9 +339,14 @@
       Model
       <select bind:value={model} disabled={running}>
         {#each MODELS as m (m.id)}
-          <option value={m.id}>{m.label}</option>
+          <option value={m.id}>{m.label} · {m.size}</option>
         {/each}
       </select>
+      {#if selectedModel}
+        <small class="hint-inline">
+          {selectedModel.size} download, once — then cached on this device.
+        </small>
+      {/if}
     </label>
 
     <label>
@@ -564,6 +576,12 @@
     font-size: 0.8rem;
     color: #777;
     margin: 1rem 0;
+  }
+  .hint-inline {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #888;
   }
   .download {
     margin: 1rem 0;
