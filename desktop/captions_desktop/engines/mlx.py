@@ -53,6 +53,10 @@ class MLXWhisperEngine(ASREngine):
         self.repo = _resolve_repo(model)
         self.language = language
         self._mlx: Any = None
+        # Local snapshot dir, resolved once in load(). Passing this to transcribe
+        # (instead of the repo id) stops mlx_whisper from re-resolving the HF repo
+        # on every decode (the "Fetching 4 files" spam + per-call overhead).
+        self._path: Optional[str] = None
 
     def load(self) -> EngineStatus:
         try:
@@ -69,7 +73,11 @@ class MLXWhisperEngine(ASREngine):
         try:
             from huggingface_hub import snapshot_download
 
-            download_with_retry(lambda: snapshot_download(self.repo), self.repo)
+            # snapshot_download returns the local snapshot dir — keep it and load
+            # from disk on every decode (no per-call HF re-resolution).
+            self._path = download_with_retry(
+                lambda: snapshot_download(self.repo), self.repo
+            )
         except Exception as exc:  # noqa: BLE001 - surface a clean error status
             return EngineStatus(
                 state="error",
@@ -96,7 +104,9 @@ class MLXWhisperEngine(ASREngine):
         if self._mlx is None:
             return TranscribeResult(text="")
         kwargs: dict[str, Any] = {
-            "path_or_hf_repo": self.repo,
+            # Load from the local snapshot dir (resolved once) so mlx_whisper
+            # doesn't re-resolve the HF repo on every decode.
+            "path_or_hf_repo": self._path or self.repo,
             "language": self.language,
             "word_timestamps": True,
         }
