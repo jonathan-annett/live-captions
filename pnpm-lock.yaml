@@ -76,6 +76,9 @@ importers:
       '@huggingface/transformers':
         specifier: ^3.0.0
         version: 3.8.1
+      double-metaphone:
+        specifier: ^2.0.1
+        version: 2.0.1
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
         specifier: ^4.0.0
@@ -981,6 +984,10 @@ packages:
 
   devalue@5.8.1:
     resolution: {integrity: sha512-4CXDYRBGqN+57wVJkuXBYmpAVUSg3L6JAQa/DFqm238G73E1wuyc/JhGQJzN7vUf/CMphYau2zXbfWzDR5aTEw==}
+
+  double-metaphone@2.0.1:
+    resolution: {integrity: sha512-oHqGfNo2bG/VTZSGFz98TWpyv3WD+d9TDOxwAY8L+zqwm4sGawNvEynegjPU+4HowE4HnIXSYAq0lst2YJgfzA==}
+    hasBin: true
 
   error-stack-parser-es@1.0.5:
     resolution: {integrity: sha512-5qucVt2XcuGMcEGgWI7i+yZpmpByQ8J1lHhcL7PwqCwu9FPP3VUXzT4ltHe5i2z9dePwEHcDVOAfSnHsOlCXRA==}
@@ -1980,6 +1987,8 @@ snapshots:
   detect-node@2.1.0: {}
 
   devalue@5.8.1: {}
+
+  double-metaphone@2.0.1: {}
 
   error-stack-parser-es@1.0.5: {}
 

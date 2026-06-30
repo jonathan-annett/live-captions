@@ -4,6 +4,7 @@
     DEFAULT_DISPLAY_CONFIG,
     exportTranscript,
     type Background,
+    type CaptionSegment,
     type DisplayConfig,
     type ExportFormat,
     type ServerMessage,
@@ -16,6 +17,7 @@
     type ConnectionState,
   } from "@captions/display";
   import { Captioner } from "./engine/captioner.js";
+  import Corrections from "./Corrections.svelte";
   import { UiStore } from "./uiStore.svelte.js";
 
   const CHANNEL = "captions";
@@ -286,6 +288,34 @@
   function sink(msg: ServerMessage): void {
     store.apply(msg);
     publisher?.publish(msg);
+  }
+
+  // --- operator correction --------------------------------------------------
+  // A corrected (locked) final fans out exactly like a captioner emit: operator
+  // preview, the on-air display (the "captions" BroadcastChannel = configChannel),
+  // and the audience room. Lock-aware upsert means it replaces in place and isn't
+  // clobbered by the engine. Pre-edit segment states are kept for one-step undo.
+  let undoStack = $state<CaptionSegment[]>([]);
+
+  function emitFinal(segment: CaptionSegment): void {
+    const msg: ServerMessage = { type: "final", segment };
+    store.apply(msg);
+    configChannel.postMessage(msg);
+    publisher?.publish(msg);
+  }
+
+  function applyCorrection(seg: CaptionSegment): void {
+    const prior = store.finals.find((s) => s.id === seg.id);
+    if (prior) undoStack = [...undoStack, $state.snapshot(prior)];
+    emitFinal(seg);
+  }
+
+  function undoCorrection(): void {
+    const prior = undoStack.at(-1);
+    if (!prior) return;
+    undoStack = undoStack.slice(0, -1);
+    // Force the restore to win over the current locked text.
+    emitFinal({ ...prior, locked: true });
   }
 
   function dictionaryTerms(): string[] {
@@ -687,8 +717,9 @@
           <code>Kubernetes, PostgreSQL, nginx, Grafana, OAuth, Kafka</code><br />
           “kubernetis” → “Kubernetes”, “postgres QL” → “PostgreSQL”. Note: an
           acronym heard as a totally different word (e.g. “SQL” → “sequel”) is a
-          <em>sound-alike</em>, not a near-miss — that's handled by the operator
-          sound-alike correction coming in v2, not this near-miss list.</p>
+          <em>sound-alike</em>, not a near-miss — fix those live by clicking the
+          word in <strong>Corrections</strong> below (sound-alike picker), which
+          also ranks against this dictionary.</p>
       </div>
     </details>
 
@@ -707,12 +738,16 @@
   </p>
 
   <section class="preview">
-    {#each store.finals.slice(-6) as seg (seg.id)}
-      <div class="line">{seg.text}</div>
-    {/each}
     {#if store.partial}
       <div class="line partial">{store.partial.text}</div>
     {/if}
+    <Corrections
+      segments={store.finals.slice(-12)}
+      dictionary={dictionaryTerms()}
+      onApply={applyCorrection}
+      onUndo={undoCorrection}
+      canUndo={undoStack.length > 0}
+    />
   </section>
 </main>
 
