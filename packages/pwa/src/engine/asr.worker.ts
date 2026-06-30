@@ -33,6 +33,11 @@ let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
 let multilingual = false;
 // Verbose [asr] logging, mirrors the page's ?debug (set from the load message).
 let debug = false;
+// Not every ONNX Whisper export ships alignment heads, so `return_timestamps:
+// "word"` can throw. We try once; if it fails we stop asking (text-only finals)
+// rather than dropping every final on the floor. Desktop carries real word
+// confidence regardless.
+let wordTimestampsOk = true;
 
 // transformers.js's pipeline() overload set is a union too large for tsc to
 // represent; call it through a narrowed signature.
@@ -140,23 +145,39 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   }
   try {
     const t0 = performance.now();
-    const out = await transcriber(msg.samples, {
+    // Common decode options. Multilingual models (large-v3-turbo) require a
+    // language + task; the `.en` models reject them. (Language is a future feature.)
+    // NOTE: no_repeat_ngram_size/repetition_penalty were tried to break repetition
+    // loops, but they derail Whisper on real speech (collapsing output to a single
+    // token). Silence hallucinations are handled by the no-speech gate + degenerate
+    // filter in captioner.ts instead.
+    const base: Record<string, unknown> = {
       chunk_length_s: 30,
-      // Word-level timestamps cost extra decode work, so the captioner only asks
-      // for them on finals — partials (the live bleeding edge) stay cheap.
-      return_timestamps: msg.words ? "word" : false,
-      // Multilingual models (large-v3-turbo) require a language + task; the
-      // `.en` models reject them. (Language selection is a future feature.)
       ...(multilingual ? { language: "en", task: "transcribe" } : {}),
-      // NOTE: no_repeat_ngram_size/repetition_penalty were tried here to break
-      // repetition loops, but they derail Whisper on real speech (collapsing
-      // output to a single token like "[" or "W"). Silence hallucinations are
-      // handled instead by the no-speech gate + degenerate filter in captioner.ts.
-    });
+    };
+
+    let out: unknown;
+    let words: Word[] | undefined;
+    // Word-level timestamps cost extra decode work, so the captioner only asks
+    // for them on finals — and only while the model is known to support them.
+    if (msg.words && wordTimestampsOk) {
+      try {
+        out = await transcriber(msg.samples, { ...base, return_timestamps: "word" });
+        words = wordsFromChunks(out);
+      } catch (werr) {
+        // This export can't do word timestamps — don't ask again, and re-decode
+        // plainly below so the final still produces text.
+        wordTimestampsOk = false;
+        out = undefined;
+        if (debug) console.warn("[asr] word timestamps unsupported, text-only:", werr);
+      }
+    }
+    if (out === undefined) {
+      out = await transcriber(msg.samples, { ...base, return_timestamps: false });
+    }
     const text = Array.isArray(out)
-      ? out.map((o) => o.text).join(" ")
-      : (out.text ?? "");
-    const words = msg.words ? wordsFromChunks(out) : undefined;
+      ? out.map((o) => (o as { text: string }).text).join(" ")
+      : ((out as { text?: string }).text ?? "");
     // Decode output + inference time, under ?debug (helps diagnose models like turbo).
     if (debug) {
       console.log(
