@@ -107,8 +107,13 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
       : (out.text ?? "");
+    // Always log decode output (one line) so we can see empty/odd results even
+    // without ?debug — invaluable for diagnosing a new model like turbo.
+    console.log(`[asr] decoded ${JSON.stringify(text.trim())}`);
     post({ type: "result", reqId: msg.reqId, text: text.trim() });
   } catch (err) {
+    // Transcribe failures were silent (turned into empty captions). Surface them.
+    console.error("[asr] transcribe failed:", err);
     post({ type: "error", reqId: msg.reqId, message: String(err) });
   }
 };
