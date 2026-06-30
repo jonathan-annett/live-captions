@@ -139,6 +139,10 @@
   let textColor = $state<string>(lookStr("textColor", DEFAULT_DISPLAY_CONFIG.color));
   let fontFamily = $state<string>(lookStr("fontFamily", DEFAULT_DISPLAY_CONFIG.fontFamily));
   let fontSize = $state<number>(lookNum("fontSize", DEFAULT_DISPLAY_CONFIG.fontSize));
+  let fontWeight = $state<number>(lookNum("fontWeight", DEFAULT_DISPLAY_CONFIG.fontWeight));
+  let orientation = $state<DisplayConfig["orientation"]>(
+    (savedLook.orientation as DisplayConfig["orientation"]) ?? DEFAULT_DISPLAY_CONFIG.orientation,
+  );
   let textAlign = $state<DisplayConfig["textAlign"]>(
     (savedLook.textAlign as DisplayConfig["textAlign"]) ?? DEFAULT_DISPLAY_CONFIG.textAlign,
   );
@@ -175,6 +179,8 @@
       color: textColor,
       fontFamily,
       fontSize,
+      fontWeight,
+      orientation,
       textAlign,
       showPartial: showLive,
       ...(boxFill ? { boxColor, ...(boxRadius ? { boxRadius } : {}) } : {}),
@@ -195,6 +201,8 @@
         textColor,
         fontFamily,
         fontSize,
+        fontWeight,
+        orientation,
         textAlign,
         boxFill,
         boxColor,
@@ -501,6 +509,26 @@
         <option value="left">Left</option>
         <option value="center">Center</option>
         <option value="right">Right</option>
+      </select>
+    </label>
+
+    <label>
+      Weight
+      <select bind:value={fontWeight}>
+        <option value={400}>Regular</option>
+        <option value={500}>Medium</option>
+        <option value={600}>Semibold</option>
+        <option value={700}>Bold</option>
+        <option value={800}>Extra Bold</option>
+        <option value={900}>Black</option>
+      </select>
+    </label>
+
+    <label>
+      Orientation
+      <select bind:value={orientation}>
+        <option value="horizontal">Horizontal</option>
+        <option value="vertical">Vertical</option>
       </select>
     </label>
 

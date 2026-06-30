@@ -51,6 +51,8 @@ def test_parse_config_message_from_ts_shape():
             "config": {
                 "fontFamily": "Inter",
                 "fontSize": 6,
+                "fontWeight": 700,
+                "orientation": "horizontal",
                 "color": "#fff",
                 "background": {"kind": "chroma", "color": "#00ff00"},
                 "position": "bottom",
@@ -73,6 +75,8 @@ def test_caption_region_round_trips_camelcase():
             "config": {
                 "fontFamily": "Inter",
                 "fontSize": 6,
+                "fontWeight": 700,
+                "orientation": "horizontal",
                 "color": "#fff",
                 "background": {"kind": "chroma", "color": "#00ff00"},
                 "position": "bottom",
@@ -100,6 +104,8 @@ def test_qr_overlay_round_trips_camelcase():
             "config": {
                 "fontFamily": "Inter",
                 "fontSize": 6,
+                "fontWeight": 700,
+                "orientation": "horizontal",
                 "color": "#fff",
                 "background": {"kind": "chroma", "color": "#00ff00"},
                 "position": "bottom",

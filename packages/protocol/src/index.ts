@@ -99,6 +99,10 @@ export const DisplayConfigSchema = z.object({
   fontFamily: z.string(),
   /** font size in viewport-height units (vh) so it scales with output res */
   fontSize: z.number().positive(),
+  /** CSS font-weight (100–900) for the caption text */
+  fontWeight: z.number().int().min(100).max(900),
+  /** text flow direction; vertical uses CSS writing-mode (e.g. CJK / side displays) */
+  orientation: z.enum(["horizontal", "vertical"]),
   color: z.string(),
   background: BackgroundSchema,
   position: DisplayPositionSchema,
@@ -124,6 +128,8 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
   fontFamily:
     "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif",
   fontSize: 6,
+  fontWeight: 700,
+  orientation: "horizontal",
   color: "#ffffff",
   // Default solid black suits HDMI capture; switch to chroma/transparent per workflow.
   background: { kind: "solid", color: "#000000" },

@@ -59,6 +59,8 @@
   style:--cap-color={store.config.color}
   style:--cap-font={store.config.fontFamily}
   style:--cap-size="{store.config.fontSize}vh"
+  style:--cap-weight={store.config.fontWeight}
+  style:--cap-orient={store.config.orientation === "vertical" ? "vertical-rl" : "horizontal-tb"}
   style:--cap-align={store.config.textAlign}
   style:--cap-transform={store.config.uppercase ? "uppercase" : "none"}
 >
@@ -106,6 +108,7 @@
   .captions {
     width: 100%;
     text-align: var(--cap-align);
+    writing-mode: var(--cap-orient, horizontal-tb);
   }
   /* Opaque caption box: pad the text off the fill edges (em scales with size). */
   .captions.filled {
@@ -126,7 +129,7 @@
     font-family: var(--cap-font);
     font-size: var(--cap-size);
     line-height: 1.25;
-    font-weight: 700;
+    font-weight: var(--cap-weight, 700);
     text-transform: var(--cap-transform);
     /* Outline for legibility over busy backgrounds (transparent/keyed). */
     text-shadow:

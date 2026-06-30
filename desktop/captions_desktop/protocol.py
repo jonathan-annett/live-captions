@@ -94,6 +94,8 @@ class QrOverlay(_Model):
 class DisplayConfig(_Model):
     font_family: str
     font_size: float  # viewport-height units (vh)
+    font_weight: int  # CSS font-weight (100–900)
+    orientation: Literal["horizontal", "vertical"]  # vertical uses CSS writing-mode
     color: str
     background: Background
     position: Literal["top", "center", "bottom"]
@@ -115,6 +117,8 @@ class DisplayConfig(_Model):
 DEFAULT_DISPLAY_CONFIG = DisplayConfig(
     font_family="'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif",
     font_size=6,
+    font_weight=700,
+    orientation="horizontal",
     color="#ffffff",
     background=SolidBackground(color="#000000"),
     position="bottom",
