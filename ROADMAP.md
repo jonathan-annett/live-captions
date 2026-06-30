@@ -50,6 +50,12 @@ Tiers, building on that one backbone:
   the speaker swipes through them on a stage tablet (question + tagged excerpt),
   answers, and can project a question via the overlay. Leverages the canonical
   log + the chroma overlay.
+- **Geofenced viewer (access control)** — optional: the audience viewer asks for
+  location permission and only streams within ~500 m of the venue, closing the
+  stream if the user leaves — deters off-site link sharing for paid-seat or
+  confidential events. Needs hysteresis + a grace period (no kicking for a
+  bathroom/coffee trip or GPS jitter); client GPS is a deterrent, not airtight;
+  location is opt-in, disclosed, ephemeral. Venue/Business tier.
 - **Crowdsourced moderation** — trusted viewers designated as moderators; a
   consensus vote (e.g. 3/4 majority) commits a correction to the canonical
   transcript and pushes it to everyone. Generalizes single-operator correction;
