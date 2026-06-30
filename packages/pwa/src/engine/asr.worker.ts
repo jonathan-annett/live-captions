@@ -96,6 +96,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     return;
   }
   try {
+    const t0 = performance.now();
     const out = await transcriber(msg.samples, {
       chunk_length_s: 30,
       return_timestamps: false,
@@ -110,9 +111,11 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
       : (out.text ?? "");
-    // Always log decode output (one line) so we can see empty/odd results even
-    // without ?debug — invaluable for diagnosing a new model like turbo.
-    console.log(`[asr] decoded ${JSON.stringify(text.trim())}`);
+    // Always log decode output + how long inference took (one line) so we can
+    // see empty/odd/slow results even without ?debug — key for a model like turbo.
+    console.log(
+      `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms`,
+    );
     post({ type: "result", reqId: msg.reqId, text: text.trim() });
   } catch (err) {
     // Transcribe failures were silent (turned into empty captions). Surface them.
