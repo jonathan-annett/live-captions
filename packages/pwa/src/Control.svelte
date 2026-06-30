@@ -92,13 +92,17 @@
   let room = $state<{ id: string; joinUrl: string } | null>(null);
   let roomError = $state<string | null>(null);
 
-  // The QR/join target is the audience viewer *page* (not the raw ws socket):
-  // viewer.html?source=room&room=<id>[&base=<room ws origin>].
+  // The QR/join target is the short audience page /room?<id>. When the room's
+  // WebSocket lives on a different origin than this page, fall back to the
+  // explicit /room?room=<id>&base=<origin> form so the viewer knows where to connect.
   function joinUrlFor(id: string): string {
-    const u = new URL("viewer.html", location.href);
-    u.searchParams.set("source", "room");
-    u.searchParams.set("room", id);
-    if (roomBase !== location.origin) u.searchParams.set("base", roomBase);
+    const u = new URL("room", location.href);
+    if (roomBase === location.origin) {
+      u.search = id; // → /room?<id>
+    } else {
+      u.searchParams.set("room", id);
+      u.searchParams.set("base", roomBase);
+    }
     return u.href;
   }
 

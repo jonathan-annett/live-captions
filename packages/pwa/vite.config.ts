@@ -31,7 +31,8 @@ export default defineConfig({
         // viewer is the audience join target (the QR points here).
         main: resolve(root, "index.html"), // operator control
         display: resolve(root, "display.html"), // on-air surface
-        viewer: resolve(root, "viewer.html"), // audience viewer
+        room: resolve(root, "room.html"), // audience join page → /room?<id>
+        viewer: resolve(root, "viewer.html"), // audience viewer (legacy entry)
       },
     },
   },

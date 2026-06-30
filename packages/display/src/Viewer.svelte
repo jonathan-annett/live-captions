@@ -9,8 +9,10 @@
   import { connectionView, isNearBottom } from "./viewerView.js";
 
   // Audience-facing mobile viewer: an uncapped, scroll-back transcript bound to
-  // a ViewerStore, fed by whatever source the URL selects (a RoomSource in
-  // production; the mock script in dev).
+  // a ViewerStore. The source can be injected (e.g. the /room page builds a
+  // RoomSource from a bare room id); otherwise it's picked from the URL.
+  let { source: providedSource }: { source?: CaptionSource } = $props();
+
   const store = new ViewerStore();
   let connection = $state<ConnectionState>("connecting");
   let following = $state(true);
@@ -20,7 +22,7 @@
   const conn = $derived(connectionView(connection));
 
   onMount(() => {
-    source = createSourceFromUrl();
+    source = providedSource ?? createSourceFromUrl();
     source.connect(store.apply, (s) => (connection = s));
     return () => source?.disconnect();
   });

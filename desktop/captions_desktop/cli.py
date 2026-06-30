@@ -212,15 +212,14 @@ def _apply_caption_region(hub: CaptionHub, args: argparse.Namespace) -> None:
 
 
 def _join_url(viewer_base: str, room_base: str, room_id: str) -> str:
-    """Audience viewer-page URL the join QR encodes (not the raw ws socket)."""
-    url = viewer_base.rstrip("/") + f"/viewer.html?source=room&room={room_id}"
-    # If the room's WebSocket lives on a different host than the viewer page,
-    # tell the viewer where to connect.
-    if room_base.rstrip("/") != viewer_base.rstrip("/"):
-        from urllib.parse import quote
+    """Short audience join URL the QR encodes (the /room page, not the ws socket)."""
+    vb = viewer_base.rstrip("/")
+    if room_base.rstrip("/") == vb:
+        return f"{vb}/room?{room_id}"  # → /room?<id>
+    # Room WebSocket on a different host than the viewer page: be explicit.
+    from urllib.parse import quote
 
-        url += "&base=" + quote(room_base.rstrip("/"), safe="")
-    return url
+    return f"{vb}/room?room={room_id}&base=" + quote(room_base.rstrip("/"), safe="")
 
 
 def _create_room(base: str) -> dict:
