@@ -6,8 +6,25 @@ from captions_desktop.protocol import (
 )
 
 
-def _final(id: str, start: float, end: float) -> FinalMessage:
-    return FinalMessage(segment=CaptionSegment(id=id, text="x", start=start, end=end))
+def _final(id: str, start: float, end: float, text: str = "x", locked=None) -> FinalMessage:
+    return FinalMessage(
+        segment=CaptionSegment(id=id, text=text, start=start, end=end, locked=locked)
+    )
+
+
+def test_dispatch_upserts_final_by_id():
+    hub = CaptionHub()
+    hub._dispatch(_final("a", 0, 1, "live"))
+    hub._dispatch(_final("a", 0, 1, "refined"))  # same id → replace, not duplicate
+    assert [s.id for s in hub.history()] == ["a"]
+    assert hub.history()[0].text == "refined"
+
+
+def test_dispatch_does_not_clobber_a_locked_final():
+    hub = CaptionHub()
+    hub._dispatch(_final("a", 0, 1, "operator fix", locked=True))
+    hub._dispatch(_final("a", 0, 1, "refinement"))  # non-locked → ignored
+    assert hub.history()[0].text == "operator fix"
 
 
 def test_dispatch_records_finals_in_history():

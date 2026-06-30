@@ -35,12 +35,20 @@ class ASREngine(ABC):
 
     @abstractmethod
     def transcribe(
-        self, samples: Any, hotwords: Optional[str] = None
+        self,
+        samples: Any,
+        hotwords: Optional[str] = None,
+        *,
+        quality: bool = False,
+        prompt: Optional[str] = None,
     ) -> TranscribeResult:
         """Transcribe a 16 kHz mono float32 numpy array.
 
         ``hotwords`` optionally biases decoding toward event-specific
-        names/jargon (the custom dictionary).
+        names/jargon (the custom dictionary). ``quality`` enables the slower,
+        higher-quality decode used by the background refinement pass (beam search
+        + long-form conditioning). ``prompt`` is preceding text to condition on
+        (cross-utterance context for refinement).
         """
 
     def unload(self) -> None:  # optional override

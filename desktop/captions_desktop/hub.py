@@ -23,6 +23,7 @@ from .protocol import (
     PartialMessage,
     ServerMessage,
     StatusMessage,
+    can_replace_segment,
 )
 
 # Drop subscribers' oldest messages rather than grow unbounded if one stalls.
@@ -72,9 +73,10 @@ class CaptionHub:
         loop.call_soon_threadsafe(self._dispatch, msg)
 
     def _dispatch(self, msg: ServerMessage) -> None:
-        # Record + prune the rolling log on finals.
+        # Record + prune the rolling log on finals. Upsert by id so a refined /
+        # corrected re-emit replaces in place (lock-aware) instead of duplicating.
         if isinstance(msg, FinalMessage):
-            self._finals.append(msg.segment)
+            self._upsert_final(msg.segment)
             self._prune()
         elif isinstance(msg, ClearMessage):
             self._finals.clear()
@@ -88,6 +90,14 @@ class CaptionHub:
                     q.put_nowait(msg)
                 except (asyncio.QueueEmpty, asyncio.QueueFull):
                     pass
+
+    def _upsert_final(self, seg: CaptionSegment) -> None:
+        for i, existing in enumerate(self._finals):
+            if existing.id == seg.id:
+                if can_replace_segment(existing, seg):
+                    self._finals[i] = seg
+                return
+        self._finals.append(seg)
 
     def _prune(self) -> None:
         cutoff = self.elapsed() - self.window_seconds

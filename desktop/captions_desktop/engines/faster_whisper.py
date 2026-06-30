@@ -68,16 +68,24 @@ class FasterWhisperEngine(ASREngine):
         )
 
     def transcribe(
-        self, samples: Any, hotwords: Optional[str] = None
+        self,
+        samples: Any,
+        hotwords: Optional[str] = None,
+        *,
+        quality: bool = False,
+        prompt: Optional[str] = None,
     ) -> TranscribeResult:
         if self._model is None:
             return TranscribeResult(text="")
         segments, _info = self._model.transcribe(
             samples,
             language=self.language,
-            beam_size=1,
+            # Refinement (quality) decodes with beam search + long-form
+            # conditioning; the live path stays greedy + context-free for latency.
+            beam_size=5 if quality else 1,
             vad_filter=False,
-            condition_on_previous_text=False,
+            condition_on_previous_text=quality,
+            initial_prompt=prompt or None,
             hotwords=hotwords or None,
             word_timestamps=True,
         )

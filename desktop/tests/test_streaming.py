@@ -63,6 +63,52 @@ def test_decode_without_words_emits_plain_segment():
     assert seg.words is None
 
 
+class _RecordingRefiner:
+    def __init__(self):
+        self.submitted = []
+        self.terms = None
+
+    def set_dictionary(self, terms):
+        self.terms = terms
+
+    def submit(self, seg_id, samples, start, end):
+        self.submitted.append((seg_id, start, end))
+
+
+def test_finalized_utterance_is_submitted_to_the_refiner():
+    hub = CaptionHub()
+    hub.submit = hub._dispatch
+    refiner = _RecordingRefiner()
+    streamer = LiveStreamer(
+        hub, _FakeEngine(TranscribeResult(text="hello")), sample_rate=16000, refiner=refiner
+    )
+    streamer.set_dictionary(["Kubernetes"])  # forwarded to the refiner
+    streamer._current_id = "u1"
+    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter_n = 16000
+    streamer._utter_start = 0
+    streamer._sample_count = 16000
+    streamer._decode(final=True)
+    assert refiner.terms == ["Kubernetes"]
+    assert refiner.submitted == [("u1", 0.0, 1.0)]
+
+
+def test_partial_is_not_submitted_to_the_refiner():
+    hub = CaptionHub()
+    hub.submit = hub._dispatch
+    refiner = _RecordingRefiner()
+    streamer = LiveStreamer(
+        hub, _FakeEngine(TranscribeResult(text="hello")), sample_rate=16000, refiner=refiner
+    )
+    streamer._current_id = "u1"
+    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter_n = 16000
+    streamer._utter_start = 0
+    streamer._sample_count = 16000
+    streamer._decode(final=False)
+    assert refiner.submitted == []
+
+
 def test_dictionary_passed_as_hotwords():
     hub = CaptionHub()
     engine = _FakeEngine(TranscribeResult(text="x"))

@@ -60,6 +60,16 @@ class CaptionSegment(_Model):
     keep_repeats: Optional[bool] = None
 
 
+def can_replace_segment(
+    existing: Optional[CaptionSegment], incoming: CaptionSegment
+) -> bool:
+    """Lock-aware upsert rule (mirror of TS ``canReplaceSegment``). An operator-
+    locked segment is the canonical text: a non-locked update (the background
+    refinement pass, an engine re-emit) must NOT overwrite it; a locked update
+    always wins."""
+    return not (existing is not None and existing.locked and not incoming.locked)
+
+
 # ---------------------------------------------------------------------------
 # Display configuration
 # ---------------------------------------------------------------------------

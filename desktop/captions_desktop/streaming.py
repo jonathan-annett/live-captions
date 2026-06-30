@@ -18,6 +18,7 @@ from typing import Any, Optional, Protocol
 from .engines.base import ASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, EngineStatus, Word
+from .refine import RefinementPass
 from .vad import EnergyVAD
 
 
@@ -99,12 +100,14 @@ class LiveStreamer:
         sample_rate: int = 16000,
         block_ms: int = 32,
         device: Optional[int] = None,
+        refiner: Optional[RefinementPass] = None,
     ) -> None:
         self.hub = hub
         self.engine = engine
         self.sample_rate = sample_rate
         self.block = int(sample_rate * block_ms / 1000)
         self.device = device
+        self.refiner = refiner
         self.dictionary: list[str] = []
 
         self._vad = EnergyVAD(sample_rate)
@@ -130,6 +133,8 @@ class LiveStreamer:
 
     def set_dictionary(self, terms: list[str]) -> None:
         self.dictionary = terms
+        if self.refiner is not None:
+            self.refiner.set_dictionary(terms)
 
     def start(self) -> None:
         import queue
@@ -141,6 +146,8 @@ class LiveStreamer:
         self.hub.emit_status(status)
         if status.state == "error":
             return
+        if self.refiner is not None:
+            self.refiner.start()
 
         self._frames = queue.Queue(maxsize=256)
         self._running.set()
@@ -173,6 +180,8 @@ class LiveStreamer:
         if self._worker:
             self._worker.join(timeout=2.0)
             self._worker = None
+        if self.refiner is not None:
+            self.refiner.stop()
         self.hub.emit_status(EngineStatus(state="idle"))
 
     def _run(self) -> None:
@@ -268,5 +277,9 @@ class LiveStreamer:
         )
         if final:
             self.hub.emit_final(seg)
+            # Hand the utterance's audio to the background refinement pass (if on)
+            # to re-decode at higher quality and re-emit under the same id.
+            if self.refiner is not None:
+                self.refiner.submit(seg_id, samples, start, end)
         else:
             self.hub.emit_partial(seg)

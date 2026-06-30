@@ -27,6 +27,25 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     serve.add_argument("--device", default="auto", help="auto|cpu|cuda (faster-whisper)")
     serve.add_argument("--mic", type=int, default=None, help="input device index")
+    serve.add_argument(
+        "--refine",
+        action="store_true",
+        help="two-tier refinement: a background pass re-decodes each utterance at "
+        "higher quality (beam + long-form context) and replaces it in place "
+        "(compute-heavy; needs a spare core/GPU)",
+    )
+    serve.add_argument(
+        "--refine-model",
+        default=None,
+        help="model for the refinement pass (default: --model; set a bigger model "
+        "here for a true two-tier, e.g. --model base.en --refine-model small.en)",
+    )
+    serve.add_argument(
+        "--refine-engine",
+        default=None,
+        choices=["auto", "faster-whisper", "mlx"],
+        help="ASR backend for the refinement pass (default: --engine)",
+    )
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
     serve.add_argument(
@@ -106,8 +125,20 @@ def _serve(args: argparse.Namespace) -> None:
         from .engines import create_engine
 
         engine = create_engine(args.engine, model=args.model, device=args.device)
-        controller = LiveStreamer(hub, engine, device=args.mic)
+        refiner = None
+        if args.refine:
+            from .refine import RefinementPass
+
+            refine_engine = create_engine(
+                args.refine_engine or args.engine,
+                model=args.refine_model or args.model,
+                device=args.device,
+            )
+            refiner = RefinementPass(hub, refine_engine)
+        controller = LiveStreamer(hub, engine, device=args.mic, refiner=refiner)
         engine_desc = f"{engine.__class__.__name__} ({args.model})"
+        if refiner is not None:
+            engine_desc += f" + refine ({args.refine_model or args.model})"
 
     terms = _parse_dictionary(args.dictionary)
     if terms:

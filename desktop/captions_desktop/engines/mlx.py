@@ -54,7 +54,12 @@ class MLXWhisperEngine(ASREngine):
         )
 
     def transcribe(
-        self, samples: Any, hotwords: Optional[str] = None
+        self,
+        samples: Any,
+        hotwords: Optional[str] = None,
+        *,
+        quality: bool = False,
+        prompt: Optional[str] = None,
     ) -> TranscribeResult:
         if self._mlx is None:
             return TranscribeResult(text="")
@@ -63,9 +68,11 @@ class MLXWhisperEngine(ASREngine):
             "language": self.language,
             "word_timestamps": True,
         }
-        # MLX has no hotwords param; bias via the initial prompt instead.
-        if hotwords:
-            kwargs["initial_prompt"] = hotwords
+        # MLX has no hotwords/beam params; condition via the initial prompt — for
+        # refinement that's the preceding text plus the dictionary bias.
+        prompt_parts = [p for p in (prompt, hotwords) if p]
+        if prompt_parts:
+            kwargs["initial_prompt"] = " ".join(prompt_parts)
         result = self._mlx.transcribe(samples, **kwargs)
         text = (result.get("text") or "").strip()
         words: list[Word] = []
