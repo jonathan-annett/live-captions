@@ -48,10 +48,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="ASR backend for the refinement pass (default: --engine)",
     )
     serve.add_argument(
-        "--no-autostart",
+        "--autostart",
         action="store_true",
-        help="don't begin captioning on launch — wait for Start (configure models "
-        "etc. in the control panel first, then click Start)",
+        help="begin captioning immediately on launch (turnkey display). Default is "
+        "to start IDLE — configure models in the control panel, then click Start.",
     )
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
@@ -184,7 +184,7 @@ def _serve(args: argparse.Namespace) -> None:
         controller,
         web_dir=web_dir,
         room_publish_url=publish_url,
-        autostart=not args.no_autostart,
+        autostart=args.autostart,
     )
 
     transparent = args.background == "transparent"
