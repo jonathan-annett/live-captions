@@ -50,6 +50,10 @@ def test_auto_apple_with_mlx_uses_mlx(monkeypatch):
 
 def test_resolve_repo():
     assert _resolve_repo("base.en") == "mlx-community/whisper-base.en-mlx"
+    assert _resolve_repo("large-v3") == "mlx-community/whisper-large-v3-mlx"
+    # turbo's repo has no `-mlx` suffix — must use the override, not the convention.
+    assert _resolve_repo("large-v3-turbo") == "mlx-community/whisper-large-v3-turbo"
+    # full repo ids pass through untouched.
     assert (
         _resolve_repo("mlx-community/whisper-large-v3-turbo")
         == "mlx-community/whisper-large-v3-turbo"

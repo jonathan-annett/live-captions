@@ -21,10 +21,20 @@ def _clamp01(p: Any) -> Optional[float]:
         return None
 
 
+# Short names whose mlx-community repo doesn't follow the `whisper-<name>-mlx`
+# convention (e.g. the turbo repo has no `-mlx` suffix).
+_REPO_OVERRIDES = {
+    "large-v3-turbo": "mlx-community/whisper-large-v3-turbo",
+    "turbo": "mlx-community/whisper-large-v3-turbo",
+}
+
+
 def _resolve_repo(model: str) -> str:
     """Map a short model name to an mlx-community repo; pass full repos through."""
     if "/" in model:
         return model
+    if model in _REPO_OVERRIDES:
+        return _REPO_OVERRIDES[model]
     return f"mlx-community/whisper-{model}-mlx"
 
 
