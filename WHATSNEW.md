@@ -14,10 +14,13 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
   were derailing Whisper into single-token output (`"["`, `"W"`) on real speech.
 
 **PWA — model picker**
-- Dropped **base.en** (consistently the weakest on WebGPU); kept **tiny.en** +
-  **small.en**; added **large-v3-turbo** (best accuracy, pinned to q4f16 ≈ 0.6 GB).
-- Each model now shows its **one-time download size** in the picker, and your
+- Dropped **base.en** (consistently the weakest on WebGPU); default is now **small.en**.
+- Each model shows its **one-time download size** in the picker, and your
   **selected model + microphone are remembered** across reloads.
+- **large-v3-turbo** is available behind **`?experimental=1`**: it transcribes
+  accurately but is far too slow for real-time on typical in-browser WebGPU, so
+  it's hidden by default (best on a strong GPU). Multilingual models now get the
+  required `language`/`task`; the `.en` models are unchanged.
 
 ## v0.1.0 — 2026-06-29
 
