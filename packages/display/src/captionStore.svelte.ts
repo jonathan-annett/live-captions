@@ -1,4 +1,5 @@
 import {
+  canReplaceSegment,
   DEFAULT_DISPLAY_CONFIG,
   type CaptionSegment,
   type DisplayConfig,
@@ -33,10 +34,7 @@ export class CaptionStore {
         // buffered (it would eat a maxLines slot and look like the screen clearing).
         if (this.partial?.id === msg.segment.id) this.partial = null;
         if (!msg.segment.text.trim()) break;
-        this.segments.push(msg.segment);
-        if (this.segments.length > MAX_BUFFER) {
-          this.segments = this.segments.slice(-MAX_BUFFER);
-        }
+        this.upsert(msg.segment);
         break;
       case "clear":
         this.segments = [];
@@ -53,6 +51,21 @@ export class CaptionStore {
         break;
     }
   };
+
+  /** Upsert a final by id: replace in place (operator correction / refinement)
+   *  rather than appending a duplicate; an operator-locked segment is never
+   *  clobbered by a non-locked update. New ids append, bounded by MAX_BUFFER. */
+  private upsert(seg: CaptionSegment): void {
+    const i = this.segments.findIndex((s) => s.id === seg.id);
+    if (i === -1) {
+      this.segments.push(seg);
+      if (this.segments.length > MAX_BUFFER) {
+        this.segments = this.segments.slice(-MAX_BUFFER);
+      }
+      return;
+    }
+    if (canReplaceSegment(this.segments[i], seg)) this.segments[i] = seg;
+  }
 
   /** Filtered finals + (optional) partial, newest last, with stable keys. */
   private buildLines(): { key: string; text: string; partial: boolean }[] {

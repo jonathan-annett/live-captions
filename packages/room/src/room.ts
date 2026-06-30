@@ -1,4 +1,5 @@
 import {
+  canReplaceSegment,
   safeParseServerMessage,
   type CaptionSegment,
   type DisplayConfig,
@@ -159,8 +160,11 @@ export class CaptionRoom {
     const now = Date.now();
     switch (msg.type) {
       case "final":
-        // upsert-by-id — refinement/correction replaces a segment in place.
-        this.log.set(msg.segment.id, { segment: msg.segment, at: now });
+        // upsert-by-id — refinement/correction replaces a segment in place,
+        // except an operator-locked segment is never clobbered by a non-locked update.
+        if (canReplaceSegment(this.log.get(msg.segment.id)?.segment, msg.segment)) {
+          this.log.set(msg.segment.id, { segment: msg.segment, at: now });
+        }
         this.latestPartial = null;
         this.prune();
         void this.ensureAlarm();
@@ -179,9 +183,12 @@ export class CaptionRoom {
         this.latestStatus = msg.status;
         break;
       case "history":
-        // A publisher may seed/replace the canonical log (e.g. session resume).
+        // A publisher may seed/replace the canonical log (e.g. session resume),
+        // but a live operator-locked segment still wins over a non-locked replay.
         for (const seg of msg.segments) {
-          this.log.set(seg.id, { segment: seg, at: now });
+          if (canReplaceSegment(this.log.get(seg.id)?.segment, seg)) {
+            this.log.set(seg.id, { segment: seg, at: now });
+          }
         }
         break;
     }

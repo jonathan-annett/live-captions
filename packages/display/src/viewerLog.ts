@@ -1,4 +1,5 @@
 import {
+  canReplaceSegment,
   DEFAULT_DISPLAY_CONFIG,
   type CaptionSegment,
   type DisplayConfig,
@@ -58,7 +59,12 @@ export class ViewerLog {
   }
 
   private upsert(seg: CaptionSegment): void {
-    if (!this.byId.has(seg.id)) this.order.push(seg.id);
+    if (!this.byId.has(seg.id)) {
+      this.order.push(seg.id);
+    } else if (!canReplaceSegment(this.byId.get(seg.id), seg)) {
+      // Keep the operator-locked text; don't let a refinement/re-emit clobber it.
+      return;
+    }
     this.byId.set(seg.id, seg);
   }
 

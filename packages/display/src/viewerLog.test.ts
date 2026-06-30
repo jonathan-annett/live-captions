@@ -28,6 +28,24 @@ describe("ViewerLog (upsert-by-id, uncapped)", () => {
     expect(log.segments[0]?.text).toBe("hello");
   });
 
+  it("does not let a non-locked update clobber an operator-locked segment", () => {
+    const log = new ViewerLog();
+    log.apply({ type: "final", segment: { ...seg("a", "Kubernetes"), locked: true } });
+    // A later engine re-emit / refinement (not locked) must be ignored.
+    log.apply({ type: "final", segment: seg("a", "cooper netties") });
+    expect(log.segments[0]?.text).toBe("Kubernetes");
+    // ...but a fresh operator correction (locked) wins.
+    log.apply({ type: "final", segment: { ...seg("a", "Kubernetes v2"), locked: true } });
+    expect(log.segments[0]?.text).toBe("Kubernetes v2");
+  });
+
+  it("ignores a non-locked history replay over a locked segment", () => {
+    const log = new ViewerLog();
+    log.apply({ type: "final", segment: { ...seg("a", "Anthropic"), locked: true } });
+    log.apply({ type: "history", segments: [seg("a", "and tropic")] });
+    expect(log.segments[0]?.text).toBe("Anthropic");
+  });
+
   it("is uncapped (keeps the whole session)", () => {
     const log = new ViewerLog();
     for (let i = 0; i < 1000; i++) {

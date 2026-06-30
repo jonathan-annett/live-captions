@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
 # Bumped on breaking changes to the message shapes below.
-PROTOCOL_VERSION = 1
+# v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
+PROTOCOL_VERSION = 2
 
 
 class _Model(BaseModel):
@@ -46,6 +47,9 @@ class CaptionSegment(_Model):
     speaker: Optional[str] = None
     lang: Optional[str] = None
     words: Optional[list[Word]] = None
+    # Operator-corrected canonical text; not overwritten by the engine or the
+    # background refinement pass (a locked update wins).
+    locked: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------

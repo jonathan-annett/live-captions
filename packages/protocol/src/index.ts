@@ -15,8 +15,9 @@ import { z } from "zod";
 
 export * from "./export.js";
 
-/** Bumped on breaking changes to the message shapes below. */
-export const PROTOCOL_VERSION = 1;
+/** Bumped on breaking changes to the message shapes below.
+ *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`. */
+export const PROTOCOL_VERSION = 2;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -45,8 +46,25 @@ export const CaptionSegmentSchema = z.object({
   lang: z.string().optional(),
   /** word-level timing (WhisperX alignment / export), when available */
   words: z.array(WordSchema).optional(),
+  /** operator-corrected: the canonical text. Not overwritten by the engine
+   *  (live re-emit) or the background refinement pass; a locked update wins. */
+  locked: z.boolean().optional(),
 });
 export type CaptionSegment = z.infer<typeof CaptionSegmentSchema>;
+
+/**
+ * Lock-aware upsert rule, shared by every upsert-by-id store (on-air
+ * {@link CaptionStore}, operator UiStore, audience ViewerLog, room DO). An
+ * operator-locked segment is the canonical text: a non-locked update (engine
+ * partial→final re-emit, background refinement) must NOT overwrite it. A locked
+ * update always wins (re-correction).
+ */
+export function canReplaceSegment(
+  existing: CaptionSegment | undefined,
+  incoming: CaptionSegment,
+): boolean {
+  return !(existing?.locked && !incoming.locked);
+}
 
 // ---------------------------------------------------------------------------
 // Display configuration
