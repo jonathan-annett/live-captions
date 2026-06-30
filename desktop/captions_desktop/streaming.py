@@ -182,6 +182,11 @@ class LiveStreamer:
         import numpy as np  # noqa: F401  (ensures numpy present before capture)
         import sounddevice as sd
 
+        # Idempotent: the server autostarts capture, so a panel "Start" while
+        # already running must not spawn a second mic stream + worker thread.
+        if self._running.is_set():
+            return
+
         status = self.engine.load()
         self.hub.emit_status(status)
         if status.state == "error":
