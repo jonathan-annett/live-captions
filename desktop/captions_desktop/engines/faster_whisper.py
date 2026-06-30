@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..protocol import EngineStatus
-from .base import ASREngine
+from ..protocol import EngineStatus, Word
+from .base import ASREngine, TranscribeResult
 
 
 class FasterWhisperEngine(ASREngine):
@@ -67,9 +67,11 @@ class FasterWhisperEngine(ASREngine):
             device=device,
         )
 
-    def transcribe(self, samples: Any, hotwords: Optional[str] = None) -> str:
+    def transcribe(
+        self, samples: Any, hotwords: Optional[str] = None
+    ) -> TranscribeResult:
         if self._model is None:
-            return ""
+            return TranscribeResult(text="")
         segments, _info = self._model.transcribe(
             samples,
             language=self.language,
@@ -77,8 +79,30 @@ class FasterWhisperEngine(ASREngine):
             vad_filter=False,
             condition_on_previous_text=False,
             hotwords=hotwords or None,
+            word_timestamps=True,
         )
-        return " ".join(s.text.strip() for s in segments).strip()
+        seg_list = list(segments)
+        text = " ".join(s.text.strip() for s in seg_list).strip()
+        words: list[Word] = []
+        for s in seg_list:
+            for w in getattr(s, "words", None) or []:
+                words.append(
+                    Word(
+                        text=w.word,  # faster-whisper keeps a leading space
+                        start=float(w.start),
+                        end=float(w.end),
+                        confidence=_clamp01(w.probability),
+                    )
+                )
+        return TranscribeResult(text=text, words=words or None)
+
+
+def _clamp01(p: Any) -> Optional[float]:
+    """Coerce a decoder probability into the protocol's 0..1 confidence range."""
+    try:
+        return max(0.0, min(1.0, float(p)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _cuda_available() -> bool:

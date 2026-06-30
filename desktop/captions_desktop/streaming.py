@@ -17,7 +17,7 @@ from typing import Any, Optional, Protocol
 
 from .engines.base import ASREngine
 from .hub import CaptionHub
-from .protocol import CaptionSegment, EngineStatus
+from .protocol import CaptionSegment, EngineStatus, Word
 from .vad import EnergyVAD
 
 
@@ -246,10 +246,26 @@ class LiveStreamer:
         start = self._utter_start / self.sample_rate
         end = self._sample_count / self.sample_rate
         hotwords = ", ".join(self.dictionary) if self.dictionary else None
-        text = self.engine.transcribe(samples, hotwords=hotwords)
-        if not text:
+        result = self.engine.transcribe(samples, hotwords=hotwords)
+        if not result.text:
             return
-        seg = CaptionSegment(id=seg_id, text=text, start=start, end=end)
+        # Engine word timestamps are clip-relative; offset to session time.
+        words = (
+            [
+                Word(
+                    text=w.text,
+                    start=start + w.start,
+                    end=start + w.end,
+                    confidence=w.confidence,
+                )
+                for w in result.words
+            ]
+            if result.words
+            else None
+        )
+        seg = CaptionSegment(
+            id=seg_id, text=result.text, start=start, end=end, words=words
+        )
         if final:
             self.hub.emit_final(seg)
         else:

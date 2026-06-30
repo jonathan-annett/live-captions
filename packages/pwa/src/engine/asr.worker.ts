@@ -4,6 +4,7 @@ import {
   env,
   type AutomaticSpeechRecognitionPipeline,
 } from "@huggingface/transformers";
+import type { Word } from "@captions/protocol";
 import type { WorkerEvent, WorkerRequest } from "./messages.js";
 
 // Models are fetched from the Hugging Face hub and cached by the browser.
@@ -83,6 +84,45 @@ async function load(model: string): Promise<void> {
   post({ type: "error", message: `Failed to load model: ${String(lastErr)}` });
 }
 
+/** transformers.js chunk shape when `return_timestamps: "word"`. */
+interface WordChunk {
+  text: string;
+  timestamp: [number, number | null];
+}
+
+/**
+ * Build word-level segments from a transformers.js `return_timestamps:"word"`
+ * result. transformers.js (unlike faster-whisper) does not expose a decoder
+ * probability, so `confidence` is an **approximation** from speaking-rate
+ * plausibility: a word whose audio duration is wildly off the expected length
+ * for its characters is more likely a mishearing. Desktop carries the real
+ * `word.probability`; this is the browser's best available proxy.
+ */
+function wordsFromChunks(out: unknown): Word[] | undefined {
+  const chunks = (out as { chunks?: WordChunk[] } | null)?.chunks;
+  if (!Array.isArray(chunks)) return undefined;
+  const words: Word[] = [];
+  for (const c of chunks) {
+    const text = (c.text ?? "").trim();
+    if (!text) continue;
+    const start = c.timestamp?.[0] ?? 0;
+    const end = c.timestamp?.[1] ?? start;
+    words.push({ text, start, end, confidence: approxConfidence(text, end - start) });
+  }
+  return words.length ? words : undefined;
+}
+
+/** Speaking-rate plausibility → pseudo-confidence in [0,1]. Pure heuristic. */
+function approxConfidence(text: string, durSec: number): number {
+  const chars = text.replace(/[^A-Za-z']/g, "").length;
+  if (chars === 0 || durSec <= 0) return 0.5;
+  // Conversational speech runs ~12–18 characters/second. Inside that band reads
+  // as confident; far outside (rushed/smeared) decays toward 0.4.
+  const cps = chars / durSec;
+  const dev = cps < 12 ? (12 - cps) / 12 : cps > 18 ? (cps - 18) / 18 : 0;
+  return Math.max(0.4, Math.min(1, 1 - dev));
+}
+
 self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const msg = ev.data;
   if (msg.type === "load") {
@@ -102,7 +142,9 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const t0 = performance.now();
     const out = await transcriber(msg.samples, {
       chunk_length_s: 30,
-      return_timestamps: false,
+      // Word-level timestamps cost extra decode work, so the captioner only asks
+      // for them on finals — partials (the live bleeding edge) stay cheap.
+      return_timestamps: msg.words ? "word" : false,
       // Multilingual models (large-v3-turbo) require a language + task; the
       // `.en` models reject them. (Language selection is a future feature.)
       ...(multilingual ? { language: "en", task: "transcribe" } : {}),
@@ -114,13 +156,15 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
       : (out.text ?? "");
+    const words = msg.words ? wordsFromChunks(out) : undefined;
     // Decode output + inference time, under ?debug (helps diagnose models like turbo).
     if (debug) {
       console.log(
-        `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms`,
+        `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms` +
+          (words ? ` (${words.length} words)` : ""),
       );
     }
-    post({ type: "result", reqId: msg.reqId, text: text.trim() });
+    post({ type: "result", reqId: msg.reqId, text: text.trim(), words });
   } catch (err) {
     // Transcribe failures were silent (turned into empty captions). Surface them.
     console.error("[asr] transcribe failed:", err);

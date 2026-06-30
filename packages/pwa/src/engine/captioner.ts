@@ -1,4 +1,4 @@
-import type { EngineStatus, ServerMessage } from "@captions/protocol";
+import type { EngineStatus, ServerMessage, Word } from "@captions/protocol";
 import { EnergyVAD } from "../audio/vad.js";
 import workletUrl from "../audio/pcm-worklet.js?url";
 import { correctText } from "./dictionary.js";
@@ -11,6 +11,11 @@ import {
 } from "./sanitize.js";
 
 const TARGET_RATE = 16000;
+
+interface DecodeResult {
+  text: string;
+  words?: Word[];
+}
 
 // Diagnostics / live tuning via the page URL (so we can debug the deployed site
 // without a rebuild): ?debug logs every gate decision + decode to the console;
@@ -68,7 +73,7 @@ export class Captioner {
   private partialBusy = false;
 
   private sampleCount = 0;
-  private pending = new Map<string, (text: string) => void>();
+  private pending = new Map<string, (r: DecodeResult) => void>();
   private dictionary: string[] = [];
 
   // derived sample thresholds (set on start once the real rate is known)
@@ -86,6 +91,13 @@ export class Captioner {
 
   private correct(text: string): string {
     return this.dictionary.length ? correctText(text, this.dictionary) : text;
+  }
+
+  /** Apply the same token-wise dictionary correction to each word so the word
+   *  array stays consistent with the corrected display text. */
+  private correctWords(words: Word[] | undefined): Word[] | undefined {
+    if (!words || !this.dictionary.length) return words;
+    return words.map((w) => ({ ...w, text: correctText(w.text, this.dictionary) }));
   }
 
   async start(): Promise<void> {
@@ -214,11 +226,18 @@ export class Captioner {
       this.logDrop("final", "no-speech gate", a);
       return;
     }
-    void this.rpc(snap.samples).then((text) => {
+    void this.rpc(snap.samples, true).then(({ text, words }) => {
       const degen = isDegenerate(text);
       if (DEBUG) console.log(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
       if (text && !degen) {
-        this.emit({ type: "final", segment: { ...snap.meta, text: this.correct(text) } });
+        this.emit({
+          type: "final",
+          segment: {
+            ...snap.meta,
+            text: this.correct(text),
+            ...(words ? { words: this.correctWords(words) } : {}),
+          },
+        });
       } else {
         this.logDrop("final", !text ? "empty decode" : "degenerate text", a);
       }
@@ -235,7 +254,7 @@ export class Captioner {
       this.logDrop("partial", "no-speech gate", a);
       return;
     }
-    void this.rpc(snap.samples).then((text) => {
+    void this.rpc(snap.samples).then(({ text }) => {
       this.partialBusy = false;
       const degen = isDegenerate(text);
       if (text && !degen && this.currentId === snap.meta.id) {
@@ -285,11 +304,11 @@ export class Captioner {
 
   // --- worker RPC -----------------------------------------------------------
 
-  private rpc(samples: Float32Array): Promise<string> {
+  private rpc(samples: Float32Array, words = false): Promise<DecodeResult> {
     const reqId = crypto.randomUUID();
     return new Promise((resolve) => {
       this.pending.set(reqId, resolve);
-      this.worker?.postMessage({ type: "transcribe", reqId, samples }, [
+      this.worker?.postMessage({ type: "transcribe", reqId, samples, words }, [
         samples.buffer,
       ]);
     });
@@ -314,12 +333,12 @@ export class Captioner {
       case "result": {
         const resolve = this.pending.get(ev.reqId);
         this.pending.delete(ev.reqId);
-        resolve?.(ev.text);
+        resolve?.({ text: ev.text, words: ev.words });
         break;
       }
       case "error": {
         if (ev.reqId) {
-          this.pending.get(ev.reqId)?.("");
+          this.pending.get(ev.reqId)?.({ text: "" });
           this.pending.delete(ev.reqId);
         } else {
           this.emitStatus({ state: "error", message: ev.message });

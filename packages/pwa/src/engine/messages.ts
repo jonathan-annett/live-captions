@@ -1,4 +1,5 @@
 // RPC message shapes between the captioner (main thread) and the ASR worker.
+import type { Word } from "@captions/protocol";
 
 export interface LoadRequest {
   type: "load";
@@ -11,6 +12,8 @@ export interface TranscribeRequest {
   type: "transcribe";
   reqId: string;
   samples: Float32Array; // 16 kHz mono
+  /** request word-level timing/confidence (finals only — adds decode cost) */
+  words?: boolean;
 }
 
 export type WorkerRequest = LoadRequest | TranscribeRequest;
@@ -36,6 +39,8 @@ export interface ResultEvent {
   type: "result";
   reqId: string;
   text: string;
+  /** word-level timing + (approximate) confidence, when requested for a final */
+  words?: Word[];
 }
 
 export interface ErrorEvent {

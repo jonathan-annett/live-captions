@@ -9,8 +9,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..protocol import EngineStatus
-from .base import ASREngine
+from ..protocol import EngineStatus, Word
+from .base import ASREngine, TranscribeResult
+
+
+def _clamp01(p: Any) -> Optional[float]:
+    """Coerce a decoder probability into the protocol's 0..1 confidence range."""
+    try:
+        return max(0.0, min(1.0, float(p)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _resolve_repo(model: str) -> str:
@@ -45,15 +53,30 @@ class MLXWhisperEngine(ASREngine):
             device="mlx (apple gpu)",
         )
 
-    def transcribe(self, samples: Any, hotwords: Optional[str] = None) -> str:
+    def transcribe(
+        self, samples: Any, hotwords: Optional[str] = None
+    ) -> TranscribeResult:
         if self._mlx is None:
-            return ""
+            return TranscribeResult(text="")
         kwargs: dict[str, Any] = {
             "path_or_hf_repo": self.repo,
             "language": self.language,
+            "word_timestamps": True,
         }
         # MLX has no hotwords param; bias via the initial prompt instead.
         if hotwords:
             kwargs["initial_prompt"] = hotwords
         result = self._mlx.transcribe(samples, **kwargs)
-        return (result.get("text") or "").strip()
+        text = (result.get("text") or "").strip()
+        words: list[Word] = []
+        for seg in result.get("segments") or []:
+            for w in seg.get("words") or []:
+                words.append(
+                    Word(
+                        text=w.get("word", ""),
+                        start=float(w.get("start", 0.0)),
+                        end=float(w.get("end", 0.0)),
+                        confidence=_clamp01(w.get("probability")),
+                    )
+                )
+        return TranscribeResult(text=text, words=words or None)
