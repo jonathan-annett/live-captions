@@ -15,7 +15,8 @@ from pydantic.alias_generators import to_camel
 # Bumped on breaking changes to the message shapes below.
 # v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
 # v3: CaptionSegment gains `joinNext` (operator line-merge control).
-PROTOCOL_VERSION = 3
+# v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
+PROTOCOL_VERSION = 4
 
 
 class _Model(BaseModel):
@@ -54,6 +55,9 @@ class CaptionSegment(_Model):
     # Operator line-merge: how the next segment joins this one. None = line break;
     # "plain" = merge w/o added punctuation; "comma"/"period" = merge inserting it.
     join_next: Optional[Literal["plain", "comma", "period"]] = None
+    # Opt out of automatic repeat-collapse (operator confirmed the repetition is
+    # real); render every instance instead of collapsing to one.
+    keep_repeats: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------

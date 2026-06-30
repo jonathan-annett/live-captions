@@ -17,8 +17,9 @@ export * from "./export.js";
 
 /** Bumped on breaking changes to the message shapes below.
  *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
- *  v3: CaptionSegment gains `joinNext` (operator line-merge control). */
-export const PROTOCOL_VERSION = 3;
+ *  v3: CaptionSegment gains `joinNext` (operator line-merge control).
+ *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse). */
+export const PROTOCOL_VERSION = 4;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -58,6 +59,9 @@ export const CaptionSegmentSchema = z.object({
   locked: z.boolean().optional(),
   /** operator line-merge: how the next segment joins this one (see JoinNext) */
   joinNext: JoinNextSchema.optional(),
+  /** opt out of automatic repeat-collapse (operator confirmed the repetition is
+   *  real, e.g. "no no no") — render every instance instead of collapsing to one */
+  keepRepeats: z.boolean().optional(),
 });
 export type CaptionSegment = z.infer<typeof CaptionSegmentSchema>;
 
@@ -94,6 +98,32 @@ function endsHard(text: string): boolean {
   return /[.,]\s*$/.test(text);
 }
 
+/** Comparable core of a word (lowercase, punctuation stripped). */
+export function normWord(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9']/g, "");
+}
+
+/**
+ * Collapse any run of the SAME word repeated `min`+ times in a row down to a
+ * single instance — the antidote to Whisper repetition loops on music/non-speech
+ * ("warning warning warning…"). Applied by default on every render surface so the
+ * audience never sees the loop; a segment can opt out with `keepRepeats`.
+ */
+export function collapseRepeats(text: string, min = 3): string {
+  const toks = text.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  let i = 0;
+  while (i < toks.length) {
+    const key = normWord(toks[i]!);
+    let j = i + 1;
+    while (j < toks.length && key && normWord(toks[j]!) === key) j++;
+    if (j - i >= min && key) out.push(toks[i]!); // keep only the first
+    else for (let k = i; k < j; k++) out.push(toks[k]!);
+    i = j;
+  }
+  return out.join(" ");
+}
+
 /** Separator inserted before the next segment when merging onto `prevText`.
  *  Context-aware: if `prevText` already ends in . or , the added mark is dropped. */
 export function joinSeparator(prevText: string, join: JoinNext): string {
@@ -112,13 +142,19 @@ export function joinSeparator(prevText: string, join: JoinNext): string {
  * same everywhere.
  */
 export function joinSegments(segments: CaptionSegment[]): JoinedLine[] {
+  // A segment's contributed text: repeat-runs collapsed to one by default, unless
+  // the operator confirmed the repetition is real (keepRepeats).
+  const memberText = (seg: CaptionSegment): string =>
+    seg.keepRepeats ? seg.text.trim() : collapseRepeats(seg.text.trim());
+
   const lines: JoinedLine[] = [];
   for (const seg of segments) {
-    if (!seg.text.trim()) continue;
+    const text = memberText(seg);
+    if (!text) continue;
     const line = lines[lines.length - 1];
     const prev = line?.members[line.members.length - 1];
     if (line && prev?.joinNext) {
-      line.text += joinSeparator(line.text, prev.joinNext) + seg.text.trim();
+      line.text += joinSeparator(line.text, prev.joinNext) + text;
       line.members.push(seg);
       line.end = seg.end;
       line.locked = line.locked || !!seg.locked;
@@ -126,7 +162,7 @@ export function joinSegments(segments: CaptionSegment[]): JoinedLine[] {
       lines.push({
         key: seg.id,
         members: [seg],
-        text: seg.text.trim(),
+        text,
         start: seg.start,
         end: seg.end,
         locked: !!seg.locked,

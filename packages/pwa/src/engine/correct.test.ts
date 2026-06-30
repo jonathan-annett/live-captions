@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyEdit,
   applyJoin,
+  applyKeepRepeats,
   applyRangeEdit,
   groupTokens,
   nextJoin,
@@ -104,6 +105,23 @@ describe("groupTokens (repetition collapse)", () => {
       "run:3",
       "bye",
     ]);
+  });
+
+  it("does not collapse when keepRepeats is set (renders every word)", () => {
+    const groups = groupTokens({
+      ...fromText("ho ho ho ho"),
+      keepRepeats: true,
+    });
+    expect(groups.every((g) => g.kind === "word")).toBe(true);
+    expect(groups.length).toBe(4);
+  });
+});
+
+describe("applyKeepRepeats", () => {
+  it("sets keepRepeats and locks", () => {
+    const out = applyKeepRepeats({ id: "a", text: "ho ho ho", start: 0, end: 1 });
+    expect(out.keepRepeats).toBe(true);
+    expect(out.locked).toBe(true);
   });
 });
 

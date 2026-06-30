@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canReplaceSegment,
+  collapseRepeats,
   DEFAULT_DISPLAY_CONFIG,
   joinSegments,
   parseClientMessage,
@@ -152,6 +153,40 @@ describe("joinSegments (operator line-merge)", () => {
   it("skips blank segments", () => {
     const lines = joinSegments([seg("a", "real"), seg("b", "   "), seg("c", "also")]);
     expect(lines.map((l) => l.text)).toEqual(["real", "also"]);
+  });
+});
+
+describe("collapseRepeats", () => {
+  it("collapses a 3+ run to one instance", () => {
+    expect(collapseRepeats("warning warning warning warning")).toBe("warning");
+    expect(collapseRepeats("hi stop stop stop bye")).toBe("hi stop bye");
+  });
+  it("leaves a word repeated only twice alone", () => {
+    expect(collapseRepeats("very very good")).toBe("very very good");
+  });
+  it("ignores case and punctuation when matching", () => {
+    expect(collapseRepeats("No, no no no thanks")).toBe("No, thanks");
+  });
+});
+
+describe("joinSegments auto repeat-collapse", () => {
+  const seg = (text: string, extra: Partial<CaptionSegment> = {}): CaptionSegment => ({
+    id: "a",
+    text,
+    start: 0,
+    end: 1,
+    ...extra,
+  });
+
+  it("collapses a repetition loop to one instance by default", () => {
+    expect(joinSegments([seg("warning warning warning warning")])[0]?.text).toBe(
+      "warning",
+    );
+  });
+
+  it("respects keepRepeats (renders every instance)", () => {
+    const out = joinSegments([seg("ho ho ho ho", { keepRepeats: true })]);
+    expect(out[0]?.text).toBe("ho ho ho ho");
   });
 });
 

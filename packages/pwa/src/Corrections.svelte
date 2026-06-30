@@ -3,6 +3,7 @@
   import {
     applyEdit,
     applyJoin,
+    applyKeepRepeats,
     applyRangeEdit,
     groupTokens,
     nextJoin,
@@ -87,10 +88,17 @@
     runSel = { id, start, count, text };
   }
 
-  function runAction(keep: 0 | 1) {
+  function deleteRun() {
     if (!runSel) return;
     const seg = segments.find((s) => s.id === runSel!.id);
-    if (seg) onApply(applyRangeEdit(seg, runSel.start, runSel.count, keep));
+    if (seg) onApply(applyRangeEdit(seg, runSel.start, runSel.count, 0));
+    runSel = null;
+  }
+
+  function keepAll() {
+    if (!runSel) return;
+    const seg = segments.find((s) => s.id === runSel!.id);
+    if (seg) onApply(applyKeepRepeats(seg));
     runSel = null;
   }
 </script>
@@ -123,12 +131,14 @@
                 onclick={() => pick(seg.id, g.index, g.text)}
               >{g.text}</button>
             {:else}
+              <!-- Auto-collapsed to one instance (highlighted); shows the
+                   suppressed count. Click to delete entirely or keep all. -->
               <button
                 class="run"
                 class:active={runSel?.id === seg.id && runSel?.start === g.start}
-                title={`"${g.text}" repeated ${g.count}× — likely a hallucination`}
+                title={`Repeated ${g.count}× — auto-collapsed to one. Click to delete or keep all.`}
                 onclick={() => pickRun(seg.id, g.start, g.count, g.text)}
-              >⚠ {g.text} ×{g.count}</button>
+              >{g.text}<span class="badge">×{g.count}</span></button>
             {/if}
           {/each}
           {#if seg.id !== lastId}
@@ -179,12 +189,12 @@
   {#if runSel}
     <div class="editor">
       <div class="editing">
-        <strong>{runSel.text}</strong> repeated {runSel.count}× — likely a hallucination
+        <strong>{runSel.text}</strong> repeated {runSel.count}× — collapsed to one
         <button class="close" onclick={() => (runSel = null)} aria-label="Cancel">✕</button>
       </div>
       <div class="manual">
-        <button onclick={() => runAction(1)}>Reduce to one</button>
-        <button class="suppress" onclick={() => runAction(0)}>Delete all</button>
+        <button class="suppress" onclick={deleteRun}>Delete entirely</button>
+        <button onclick={keepAll}>Keep all {runSel.count}</button>
       </div>
     </div>
   {/if}
@@ -256,16 +266,16 @@
     background: #1f4d8f;
     color: #fff;
   }
-  /* Collapsed repetition run: a flagged chip the operator can reduce/delete. */
+  /* Auto-collapsed repetition: the single kept instance, highlighted, with the
+     suppressed count as a small badge. Click to delete entirely or keep all. */
   .run {
     background: #3a1414;
     color: #e38f8f;
     border: 1px solid #5c1d1d;
-    border-radius: 4px;
-    padding: 0.05rem 0.45rem;
-    margin: 0 0.15rem;
+    border-radius: 3px;
+    padding: 0 0.2rem;
+    margin: 0 0.05rem;
     font: inherit;
-    font-size: 0.85em;
     cursor: pointer;
     white-space: nowrap;
   }
@@ -273,6 +283,12 @@
   .run.active {
     background: #5c1d1d;
     color: #ffd9d9;
+  }
+  .run .badge {
+    font-size: 0.7em;
+    opacity: 0.8;
+    margin-left: 0.15rem;
+    vertical-align: super;
   }
   /* Line-merge boundary control (editor-only; never shown on air/audience). */
   .join {

@@ -40,7 +40,8 @@ export function groupTokens(seg: CaptionSegment, min = 3): TokenGroup[] {
     let j = i + 1;
     while (j < toks.length && key && normWord(toks[j]!.text) === key) j++;
     const count = j - i;
-    if (count >= min && key) {
+    // keepRepeats = operator confirmed the repetition is real → don't collapse.
+    if (count >= min && key && !seg.keepRepeats) {
       groups.push({ kind: "run", start: i, count, text: toks[i]!.text });
     } else {
       for (let k = i; k < j; k++) {
@@ -148,6 +149,12 @@ export function nextJoin(seg: CaptionSegment): CaptionSegment["joinNext"] {
   if (!cur) return "comma";
   if (cur === "comma") return "period";
   return undefined;
+}
+
+/** Keep all repeats in a segment (opt out of auto-collapse), locking it. Used
+ *  when the operator confirms a flagged repetition is real, not a hallucination. */
+export function applyKeepRepeats(seg: CaptionSegment): CaptionSegment {
+  return { ...seg, keepRepeats: true, locked: true };
 }
 
 /** Set (or clear) a segment's join-to-next state, locking it as operator-set. */
