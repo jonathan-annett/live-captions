@@ -1,7 +1,32 @@
+import pytest
+
 import captions_desktop.engines as engines
 from captions_desktop.engines import create_engine
+from captions_desktop.engines.base import download_with_retry
 from captions_desktop.engines.faster_whisper import FasterWhisperEngine
 from captions_desktop.engines.mlx import MLXWhisperEngine, _resolve_repo
+
+
+def test_download_with_retry_recovers_after_transient_failures():
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ConnectionError("dropped")
+        return "weights"
+
+    # base_delay=0 keeps the test instant; resume is huggingface_hub's job.
+    assert download_with_retry(flaky, "test-model", attempts=5, base_delay=0) == "weights"
+    assert calls["n"] == 3
+
+
+def test_download_with_retry_reraises_after_exhausting_attempts():
+    def always_fails():
+        raise ConnectionError("offline")
+
+    with pytest.raises(ConnectionError, match="offline"):
+        download_with_retry(always_fails, "test-model", attempts=3, base_delay=0)
 
 
 def test_explicit_faster_whisper():

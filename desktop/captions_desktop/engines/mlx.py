@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..protocol import EngineStatus, Word
-from .base import ASREngine, TranscribeResult
+from .base import ASREngine, TranscribeResult, download_with_retry
 
 
 def _clamp01(p: Any) -> Optional[float]:
@@ -44,6 +44,19 @@ class MLXWhisperEngine(ASREngine):
                 backend="mlx-whisper",
                 model=self.repo,
                 message=f"mlx-whisper not installed: {exc}",
+            )
+        # Pre-fetch the weights explicitly with resume + retry, rather than letting
+        # the first transcribe trigger an opaque (and previously un-retried) download.
+        try:
+            from huggingface_hub import snapshot_download
+
+            download_with_retry(lambda: snapshot_download(self.repo), self.repo)
+        except Exception as exc:  # noqa: BLE001 - surface a clean error status
+            return EngineStatus(
+                state="error",
+                backend="mlx-whisper",
+                model=self.repo,
+                message=f"model download failed: {exc}",
             )
         self._mlx = mlx_whisper
         return EngineStatus(

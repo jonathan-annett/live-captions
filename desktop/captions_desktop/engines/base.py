@@ -7,11 +7,44 @@ keeps the streaming/transport code independent of the backend, so faster-whisper
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 from ..protocol import EngineStatus, Word
+
+_T = TypeVar("_T")
+
+
+def download_with_retry(
+    fn: Callable[[], _T], what: str, *, attempts: int = 5, base_delay: float = 2.0
+) -> _T:
+    """Run a model download/load with exponential-backoff retry.
+
+    huggingface_hub resumes partial blobs automatically between attempts, so a
+    flaky or rate-limited big-model download recovers (continuing the partial)
+    instead of restarting or leaving an orphaned `.incomplete` for the next run.
+    Re-raises the last error if all attempts fail. (We intentionally avoid
+    `hf_transfer` — faster but less resilient on unstable links.)
+    """
+    delay = base_delay
+    last: Optional[BaseException] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - report + retry any download error
+            last = exc
+            if attempt < attempts:
+                print(
+                    f"  model:    {what} interrupted ({type(exc).__name__}); "
+                    f"resuming — attempt {attempt + 1}/{attempts} in {delay:.0f}s…",
+                    flush=True,
+                )
+                time.sleep(delay)
+                delay = min(delay * 2, 30.0)
+    assert last is not None
+    raise last
 
 
 @dataclass

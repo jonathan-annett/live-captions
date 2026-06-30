@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..protocol import EngineStatus, Word
-from .base import ASREngine, TranscribeResult
+from .base import ASREngine, TranscribeResult, download_with_retry
 
 
 class FasterWhisperEngine(ASREngine):
@@ -47,9 +47,15 @@ class FasterWhisperEngine(ASREngine):
             "float16" if device == "cuda" else "int8"
         )
 
+        # WhisperModel(...) downloads the CT2 weights on first use; wrap it in the
+        # resume+retry helper so a flaky/rate-limited download recovers instead of
+        # failing the load (huggingface_hub resumes the partial between attempts).
         try:
-            self._model = WhisperModel(
-                self.model_name, device=device, compute_type=compute_type
+            self._model = download_with_retry(
+                lambda: WhisperModel(
+                    self.model_name, device=device, compute_type=compute_type
+                ),
+                self.model_name,
             )
         except Exception as exc:  # pragma: no cover - env dependent
             return EngineStatus(
