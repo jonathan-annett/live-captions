@@ -68,11 +68,27 @@
   let dictionaryText = $state("");
 
   // --- model picker (desktop hot-swap) --------------------------------------
-  // Live model stays fast; refine model can be large (two-tier). Free text is
-  // allowed (any HF repo) via the datalist.
+  // Live model stays fast; refine model can be large (two-tier). A real <select>
+  // (not a datalist, which hides options that don't match the typed value) keeps
+  // every model visible for BOTH live and refine; "Custom…" allows any HF repo.
   const MODELS = ["tiny.en", "small.en", "medium.en", "large-v3", "large-v3-turbo"];
+  const CUSTOM = "__custom";
   let liveModel = $state(lsGet("cg.model") ?? "small.en");
   let refineModel = $state(lsGet("cg.refineModel") ?? "large-v3");
+  // Track "custom repo" mode per field so a known→custom switch doesn't flicker.
+  let liveCustom = $state(!MODELS.includes(lsGet("cg.model") ?? "small.en"));
+  let refineCustom = $state(!MODELS.includes(lsGet("cg.refineModel") ?? "large-v3"));
+
+  function onModelSelect(which: "live" | "refine", value: string): void {
+    const custom = value === CUSTOM;
+    if (which === "live") {
+      liveCustom = custom;
+      if (!custom) liveModel = value;
+    } else {
+      refineCustom = custom;
+      if (!custom) refineModel = value;
+    }
+  }
 
   let socket: ControlSocket | null = null;
   let synced = false; // adopted the server's config yet?
@@ -214,15 +230,30 @@
     <h2>Model</h2>
     <label>
       Live
-      <input list="cg-models" bind:value={liveModel} placeholder="small.en" />
+      <select
+        value={liveCustom ? CUSTOM : liveModel}
+        onchange={(e) => onModelSelect("live", e.currentTarget.value)}
+      >
+        {#each MODELS as m (m)}<option value={m}>{m}</option>{/each}
+        <option value={CUSTOM}>Custom HF repo…</option>
+      </select>
+      {#if liveCustom}
+        <input bind:value={liveModel} placeholder="org/repo" />
+      {/if}
     </label>
     <label>
       Refine
-      <input list="cg-models" bind:value={refineModel} placeholder="large-v3" />
+      <select
+        value={refineCustom ? CUSTOM : refineModel}
+        onchange={(e) => onModelSelect("refine", e.currentTarget.value)}
+      >
+        {#each MODELS as m (m)}<option value={m}>{m}</option>{/each}
+        <option value={CUSTOM}>Custom HF repo…</option>
+      </select>
+      {#if refineCustom}
+        <input bind:value={refineModel} placeholder="org/repo" />
+      {/if}
     </label>
-    <datalist id="cg-models">
-      {#each MODELS as m (m)}<option value={m}></option>{/each}
-    </datalist>
     <div class="model-apply">
       <button onclick={applyModel} disabled={engineState === "loading"}>
         {engineState === "loading" ? "Loading…" : "Apply model"}

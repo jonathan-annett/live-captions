@@ -47,6 +47,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         choices=["auto", "faster-whisper", "mlx"],
         help="ASR backend for the refinement pass (default: --engine)",
     )
+    serve.add_argument(
+        "--no-autostart",
+        action="store_true",
+        help="don't begin captioning on launch — wait for Start (configure models "
+        "etc. in the control panel first, then click Start)",
+    )
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
     serve.add_argument(
@@ -173,7 +179,13 @@ def _serve(args: argparse.Namespace) -> None:
         )
 
     web_dir = find_web_dir(args.web)
-    app = build_app(hub, controller, web_dir=web_dir, room_publish_url=publish_url)
+    app = build_app(
+        hub,
+        controller,
+        web_dir=web_dir,
+        room_publish_url=publish_url,
+        autostart=not args.no_autostart,
+    )
 
     transparent = args.background == "transparent"
     base = f"http://{args.host}:{args.port}"
