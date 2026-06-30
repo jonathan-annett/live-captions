@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .export import export_transcript
@@ -105,6 +105,20 @@ def build_app(
             hub.unsubscribe(q)
 
     if web_dir is not None:
+        control_html = Path(web_dir) / "control.html"
+
+        # Operator control / config panel. Convenience alias for /control.html
+        # (registered before the catch-all mount so it takes precedence).
+        @app.get("/control")
+        async def control() -> Response:
+            if control_html.is_file():
+                return FileResponse(str(control_html))
+            return HTMLResponse(
+                "<h1>Control panel not built</h1><p>Run "
+                "<code>pnpm --filter @captions/display build</code>, then reload.</p>",
+                status_code=404,
+            )
+
         # Mounted last so /ws and /history take precedence.
         app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
     else:

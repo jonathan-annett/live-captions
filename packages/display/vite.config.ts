@@ -15,6 +15,8 @@ export default defineConfig({
         // On-air display (desktop/PWA) and the audience viewer ship together.
         main: resolve(import.meta.dirname, "index.html"),
         viewer: resolve(import.meta.dirname, "viewer.html"),
+        // Desktop operator control / config panel (thin client over /ws).
+        control: resolve(import.meta.dirname, "control.html"),
       },
     },
   },
