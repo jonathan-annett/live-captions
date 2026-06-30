@@ -18,6 +18,10 @@ export class BroadcastChannelSource implements CaptionSource {
     };
     // Same-origin channel: effectively always connected.
     onState?.("open");
+    // BroadcastChannel has no replay, so a display opened after the controller's
+    // last config broadcast would miss it (stuck on defaults). Announce on
+    // connect so the controller re-sends the current display config.
+    this.channel.postMessage({ type: "requestConfig" });
   }
 
   disconnect(): void {

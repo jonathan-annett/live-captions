@@ -122,6 +122,14 @@
     configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
   });
 
+  // A display that connects later asks for the current config (BroadcastChannel
+  // doesn't replay); reply so it doesn't stay on defaults (e.g. miss chroma).
+  configChannel.onmessage = (ev) => {
+    if ((ev.data as { type?: string } | null)?.type === "requestConfig") {
+      configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
+    }
+  };
+
   function resolvePublishUrl(): string | null {
     const params = new URLSearchParams(location.search);
     const direct = params.get("publish");
