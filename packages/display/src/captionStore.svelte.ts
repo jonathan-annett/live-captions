@@ -34,7 +34,14 @@ export class CaptionStore {
         // A finalize still clears its partial, but a blank final is never
         // buffered (it would eat a maxLines slot and look like the screen clearing).
         if (this.partial?.id === msg.segment.id) this.partial = null;
-        if (!msg.segment.text.trim()) break;
+        if (!msg.segment.text.trim()) {
+          // A locked blank is an operator deletion (e.g. clearing a repetition
+          // loop) → drop it; a non-locked blank is engine noise → never buffer.
+          if (msg.segment.locked) {
+            this.segments = this.segments.filter((s) => s.id !== msg.segment.id);
+          }
+          break;
+        }
         this.upsert(msg.segment);
         break;
       case "clear":

@@ -1,6 +1,13 @@
 <script lang="ts">
   import { joinSegments, type CaptionSegment } from "@captions/protocol";
-  import { applyEdit, applyJoin, nextJoin, segmentTokens } from "./engine/correct.js";
+  import {
+    applyEdit,
+    applyJoin,
+    applyRangeEdit,
+    groupTokens,
+    nextJoin,
+    segmentTokens,
+  } from "./engine/correct.js";
   import { suggestCorrections } from "./engine/suggest.js";
 
   interface Props {
@@ -24,6 +31,9 @@
   const PAGE = 200;
 
   let sel = $state<{ id: string; index: number } | null>(null);
+  let runSel = $state<{ id: string; start: number; count: number; text: string } | null>(
+    null,
+  );
   let replacement = $state("");
   let shown = $state(PAGE);
   const visible = $derived(segments.slice(-shown));
@@ -61,6 +71,7 @@
   );
 
   function pick(id: string, index: number, text: string) {
+    runSel = null;
     sel = { id, index };
     replacement = text;
   }
@@ -69,6 +80,18 @@
     if (!selSeg || !sel) return;
     onApply(applyEdit(selSeg, sel.index, text));
     sel = null;
+  }
+
+  function pickRun(id: string, start: number, count: number, text: string) {
+    sel = null;
+    runSel = { id, start, count, text };
+  }
+
+  function runAction(keep: 0 | 1) {
+    if (!runSel) return;
+    const seg = segments.find((s) => s.id === runSel!.id);
+    if (seg) onApply(applyRangeEdit(seg, runSel.start, runSel.count, keep));
+    runSel = null;
   }
 </script>
 
@@ -91,13 +114,22 @@
     {#each lines as line (line.key)}
       <div class="line" class:locked={line.locked}>
         {#each line.members as seg (seg.id)}
-          {#each segmentTokens(seg) as tok, i (i)}
-            <button
-              class="word"
-              class:lowconf={tok.confidence !== undefined && tok.confidence < LOW_CONF}
-              class:active={sel?.id === seg.id && sel?.index === i}
-              onclick={() => pick(seg.id, i, tok.text)}
-            >{tok.text}</button>
+          {#each groupTokens(seg) as g (g.kind === "run" ? `r${g.start}` : `w${g.index}`)}
+            {#if g.kind === "word"}
+              <button
+                class="word"
+                class:lowconf={g.confidence !== undefined && g.confidence < LOW_CONF}
+                class:active={sel?.id === seg.id && sel?.index === g.index}
+                onclick={() => pick(seg.id, g.index, g.text)}
+              >{g.text}</button>
+            {:else}
+              <button
+                class="run"
+                class:active={runSel?.id === seg.id && runSel?.start === g.start}
+                title={`"${g.text}" repeated ${g.count}× — likely a hallucination`}
+                onclick={() => pickRun(seg.id, g.start, g.count, g.text)}
+              >⚠ {g.text} ×{g.count}</button>
+            {/if}
           {/each}
           {#if seg.id !== lastId}
             <button
@@ -140,6 +172,19 @@
         />
         <button onclick={() => commit(replacement)}>Apply</button>
         <button class="suppress" onclick={() => commit("")}>Suppress</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if runSel}
+    <div class="editor">
+      <div class="editing">
+        <strong>{runSel.text}</strong> repeated {runSel.count}× — likely a hallucination
+        <button class="close" onclick={() => (runSel = null)} aria-label="Cancel">✕</button>
+      </div>
+      <div class="manual">
+        <button onclick={() => runAction(1)}>Reduce to one</button>
+        <button class="suppress" onclick={() => runAction(0)}>Delete all</button>
       </div>
     </div>
   {/if}
@@ -210,6 +255,24 @@
   .word.active {
     background: #1f4d8f;
     color: #fff;
+  }
+  /* Collapsed repetition run: a flagged chip the operator can reduce/delete. */
+  .run {
+    background: #3a1414;
+    color: #e38f8f;
+    border: 1px solid #5c1d1d;
+    border-radius: 4px;
+    padding: 0.05rem 0.45rem;
+    margin: 0 0.15rem;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .run:hover,
+  .run.active {
+    background: #5c1d1d;
+    color: #ffd9d9;
   }
   /* Line-merge boundary control (editor-only; never shown on air/audience). */
   .join {

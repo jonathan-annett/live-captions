@@ -14,6 +14,49 @@ export interface EditToken {
   confidence?: number;
 }
 
+/** A rendered token group: a normal word, or a collapsed run of one repeated
+ *  word (a Whisper repetition hallucination flagged for the operator). */
+export type TokenGroup =
+  | { kind: "word"; index: number; text: string; confidence?: number }
+  | { kind: "run"; start: number; count: number; text: string };
+
+/** Comparable core of a token (lowercase, punctuation stripped). */
+function normWord(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9']/g, "");
+}
+
+/**
+ * Group a segment's tokens, collapsing any run of the SAME word repeated `min`+
+ * times in a row (default 3 — "more than twice") into a single flagged `run`
+ * group. This is the operator-side antidote to Whisper repetition loops
+ * (e.g. "warning warning warning…" on music/non-speech).
+ */
+export function groupTokens(seg: CaptionSegment, min = 3): TokenGroup[] {
+  const toks = segmentTokens(seg);
+  const groups: TokenGroup[] = [];
+  let i = 0;
+  while (i < toks.length) {
+    const key = normWord(toks[i]!.text);
+    let j = i + 1;
+    while (j < toks.length && key && normWord(toks[j]!.text) === key) j++;
+    const count = j - i;
+    if (count >= min && key) {
+      groups.push({ kind: "run", start: i, count, text: toks[i]!.text });
+    } else {
+      for (let k = i; k < j; k++) {
+        groups.push({
+          kind: "word",
+          index: k,
+          text: toks[k]!.text,
+          confidence: toks[k]!.confidence,
+        });
+      }
+    }
+    i = j;
+  }
+  return groups;
+}
+
 /** A segment's clickable tokens: word-level when available, else split text. */
 export function segmentTokens(seg: CaptionSegment): EditToken[] {
   if (seg.words && seg.words.length) {
@@ -63,6 +106,33 @@ export function applyEdit(
   if (index < 0 || index >= toks.length) return seg;
   if (suppress) toks.splice(index, 1);
   else toks[index] = repl;
+  return { ...seg, text: toks.join(" "), locked: true };
+}
+
+/**
+ * Collapse a run of repeated tokens: keep the first `keep` (1 = reduce to one,
+ * 0 = delete the whole run), remove the rest. Locks the segment. A delete-all
+ * that empties the segment yields blank text (callers treat a blank locked
+ * segment as a removal).
+ */
+export function applyRangeEdit(
+  seg: CaptionSegment,
+  start: number,
+  count: number,
+  keep: 0 | 1,
+): CaptionSegment {
+  const removeAt = start + keep;
+  const removeN = count - keep;
+  if (removeN <= 0 || start < 0) return seg;
+  if (seg.words && seg.words.length) {
+    if (start >= seg.words.length) return seg;
+    const words = seg.words.slice();
+    words.splice(removeAt, removeN);
+    return { ...seg, text: textFromWords(words), words, locked: true };
+  }
+  const toks = seg.text.trim().split(/\s+/).filter(Boolean);
+  if (start >= toks.length) return seg;
+  toks.splice(removeAt, removeN);
   return { ...seg, text: toks.join(" "), locked: true };
 }
 

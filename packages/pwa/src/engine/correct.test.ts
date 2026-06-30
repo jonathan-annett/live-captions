@@ -1,6 +1,13 @@
 import type { CaptionSegment } from "@captions/protocol";
 import { describe, expect, it } from "vitest";
-import { applyEdit, applyJoin, nextJoin, segmentTokens } from "./correct.js";
+import {
+  applyEdit,
+  applyJoin,
+  applyRangeEdit,
+  groupTokens,
+  nextJoin,
+  segmentTokens,
+} from "./correct.js";
 
 const withWords = (): CaptionSegment => ({
   id: "a",
@@ -62,6 +69,84 @@ describe("applyEdit (word-level)", () => {
   it("ignores an out-of-range index", () => {
     const seg = withWords();
     expect(applyEdit(seg, 9, "x")).toBe(seg);
+  });
+});
+
+describe("groupTokens (repetition collapse)", () => {
+  const fromText = (text: string): CaptionSegment => ({
+    id: "a",
+    text,
+    start: 0,
+    end: 1,
+  });
+
+  it("collapses a run of 3+ identical words into one flagged group", () => {
+    const groups = groupTokens(fromText("warning warning warning warning"));
+    expect(groups.length).toBe(1);
+    expect(groups[0]).toMatchObject({ kind: "run", start: 0, count: 4, text: "warning" });
+  });
+
+  it("leaves a word repeated only twice as normal words", () => {
+    const groups = groupTokens(fromText("very very good"));
+    expect(groups.every((g) => g.kind === "word")).toBe(true);
+  });
+
+  it("ignores case and trailing punctuation when matching a run", () => {
+    const groups = groupTokens(fromText("No, no no no thanks"));
+    const run = groups.find((g) => g.kind === "run");
+    expect(run).toMatchObject({ count: 4 });
+  });
+
+  it("keeps surrounding words around a run", () => {
+    const groups = groupTokens(fromText("hello stop stop stop bye"));
+    expect(groups.map((g) => (g.kind === "run" ? `run:${g.count}` : g.text))).toEqual([
+      "hello",
+      "run:3",
+      "bye",
+    ]);
+  });
+});
+
+describe("applyRangeEdit (reduce / delete a run)", () => {
+  const fromText = (text: string): CaptionSegment => ({
+    id: "a",
+    text,
+    start: 0,
+    end: 1,
+  });
+
+  it("reduces a run to a single instance", () => {
+    const seg = applyRangeEdit(fromText("hi warning warning warning bye"), 1, 3, 1);
+    expect(seg.text).toBe("hi warning bye");
+    expect(seg.locked).toBe(true);
+  });
+
+  it("deletes an entire run", () => {
+    const seg = applyRangeEdit(fromText("hi warning warning warning bye"), 1, 3, 0);
+    expect(seg.text).toBe("hi bye");
+  });
+
+  it("delete-all that empties the segment yields blank locked text", () => {
+    const seg = applyRangeEdit(fromText("warning warning warning"), 0, 3, 0);
+    expect(seg.text).toBe("");
+    expect(seg.locked).toBe(true);
+  });
+
+  it("operates on words when present, keeping timing for the kept token", () => {
+    const seg: CaptionSegment = {
+      id: "a",
+      text: "warning warning warning",
+      start: 0,
+      end: 3,
+      words: [
+        { text: "warning", start: 0, end: 1, confidence: 0.3 },
+        { text: "warning", start: 1, end: 2, confidence: 0.3 },
+        { text: "warning", start: 2, end: 3, confidence: 0.3 },
+      ],
+    };
+    const out = applyRangeEdit(seg, 0, 3, 1);
+    expect(out.text).toBe("warning");
+    expect(out.words?.length).toBe(1);
   });
 });
 
