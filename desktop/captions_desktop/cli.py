@@ -18,7 +18,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve = sub.add_parser("serve", help="run the caption server + display")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
-    serve.add_argument("--model", default="base.en", help="model name or HF repo")
+    serve.add_argument("--model", default="small.en", help="model name or HF repo")
     serve.add_argument(
         "--engine",
         default="auto",
@@ -29,16 +29,17 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve.add_argument("--mic", type=int, default=None, help="input device index")
     serve.add_argument(
         "--refine",
-        action="store_true",
-        help="two-tier refinement: a background pass re-decodes each utterance at "
-        "higher quality (beam + long-form context) and replaces it in place "
-        "(compute-heavy; needs a spare core/GPU)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="two-tier refinement (ON by default): a background pass re-decodes "
+        "each utterance at higher quality (beam + long-form context) and replaces "
+        "it in place. Compute-heavy — use --no-refine to disable.",
     )
     serve.add_argument(
         "--refine-model",
-        default=None,
-        help="model for the refinement pass (default: --model; set a bigger model "
-        "here for a true two-tier, e.g. --model base.en --refine-model small.en)",
+        default="large-v3",
+        help="model for the refinement pass (default: large-v3; try large-v3-turbo "
+        "for a lighter/faster refine, or match --model to disable the quality jump)",
     )
     serve.add_argument(
         "--refine-engine",
