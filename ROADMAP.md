@@ -23,13 +23,20 @@ Tiers, building on that one backbone:
    font family/size/weight, orientation, background — live controls).
 3. **Post-production** — decoupled **hi-fi capture** (record native rate; 16 kHz tee for ASR)
    + **WhisperX forced alignment** of the canonical text → editor-grade time-aligned
-   `SRT`/`VTT`/word-JSON.
-4. **Archive / replay** — Opus audio + aligned transcript on object storage; historical
-   viewer with **tap-a-line-to-hear-it** + word karaoke (live mode stays text-only).
+   `SRT`/`VTT`/word-JSON · **VAD-guided loudness leveling** (offline two-pass: reuse the
+   silence/segment timeline to normalize each speech chunk to a target loudness — LUFS
+   target + true-peak clamp, capped boost — and interpolate the gain in dB across the
+   silent gaps so levels never jump; same VAD clock as the captions/word timings).
+4. **Archive / replay** — Opus audio (leveled) + aligned transcript on object storage;
+   historical viewer with **tap-a-line-to-hear-it** + word karaoke (live mode stays text-only).
 
 ## Later
 - **Live translation** — per-language rooms (id scheme reserves `:lang`); on-device or cloud MT.
-- **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency tuning.
+- **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency
+  tuning; **speech-gated input gain** (normalize detected-speech to a healthy level *before* the
+  model — gated to speech so gaps/noise are never boosted into hallucinations; helps quiet
+  utterances + quantized q4/int8 models, which self-normalizing Whisper benefits from only
+  modestly), and **high-pass / light denoise** as a cleaner ASR feed.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
