@@ -155,10 +155,12 @@ class LiveStreamer:
             self.refiner.set_dictionary(terms)
 
     def set_model(self, model: str, refine_model: Optional[str] = None) -> None:
-        """Hot-swap the live (and optionally refine) model. Rebuilds the engine(s)
-        via the factories and, if capturing, does a controlled stop→reload→start
-        (a brief 'loading' gap). The hub/history, WS clients and dictionary all
-        survive the swap. No-op if no engine factory was provided."""
+        """Hot-swap the live model and enable/disable/swap refinement. Rebuilds the
+        engine(s) via the factories and, if capturing, does a controlled
+        stop→reload→start (a brief 'loading' gap). `refine_model` controls the
+        refiner: a model name enables it (creating the pass if needed), None/empty
+        DISABLES it (live-only). Hub/history, WS clients and dictionary survive the
+        swap. No-op if no engine factory was provided."""
         if self._make_engine is None:
             return
         running = self._running.is_set()
@@ -166,13 +168,15 @@ class LiveStreamer:
             self.stop()  # tears down capture + refiner; emits idle
         self.model = model
         self.engine = self._make_engine(model)
-        if (
-            self.refiner is not None
-            and refine_model
-            and self._make_refine_engine is not None
-        ):
-            self.refine_model = refine_model
-            self.refiner.set_engine(self._make_refine_engine(refine_model))
+        # Refiner: build it for the requested model, or drop it (live-only).
+        want = refine_model or None
+        if self._make_refine_engine is not None:
+            if want:
+                self.refiner = RefinementPass(self.hub, self._make_refine_engine(want))
+                self.refiner.set_dictionary(self.dictionary)
+            else:
+                self.refiner = None
+            self.refine_model = want
         if running:
             self.start()  # reloads + warms the new engine(s), restarts capture
 

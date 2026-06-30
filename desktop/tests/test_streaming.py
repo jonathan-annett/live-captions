@@ -146,12 +146,22 @@ def test_set_model_swaps_engine_via_factory():
         model="base.en",
         refine_model="base.en",
     )
-    # Idle (not capturing): set_model just rebuilds the engines via the factories.
+    # Idle (not capturing): set_model rebuilds the live engine and (re)creates the
+    # refiner via the factories.
     streamer.set_model("small.en", "large-v3")
     assert streamer.model == "small.en"
     assert streamer.engine._result.text == "small.en"  # new live engine
     assert streamer.refine_model == "large-v3"
-    assert refiner.engine._result.text == "r:large-v3"  # new refine engine
+    assert streamer.refiner is not None
+    assert streamer.refiner.engine._result.text == "r:large-v3"  # rebuilt refine engine
+
+    # Refine = None disables the pass (live-only); a model re-enables it.
+    streamer.set_model("small.en", None)
+    assert streamer.refiner is None
+    assert streamer.refine_model is None
+    streamer.set_model("small.en", "tiny.en")
+    assert streamer.refiner is not None
+    assert streamer.refiner.engine._result.text == "r:tiny.en"
 
 
 def test_set_model_noop_without_factory():

@@ -73,11 +73,15 @@
   // every model visible for BOTH live and refine; "Custom…" allows any HF repo.
   const MODELS = ["tiny.en", "small.en", "medium.en", "large-v3", "large-v3-turbo"];
   const CUSTOM = "__custom";
-  let liveModel = $state(lsGet("cg.model") ?? "small.en");
-  let refineModel = $state(lsGet("cg.refineModel") ?? "large-v3");
+  const OFF = ""; // refine disabled (live-only)
+  const _savedLive = lsGet("cg.model") ?? "small.en";
+  const _savedRefine = lsGet("cg.refineModel") ?? "large-v3";
+  let liveModel = $state(_savedLive);
+  let refineModel = $state(_savedRefine);
   // Track "custom repo" mode per field so a known→custom switch doesn't flicker.
-  let liveCustom = $state(!MODELS.includes(lsGet("cg.model") ?? "small.en"));
-  let refineCustom = $state(!MODELS.includes(lsGet("cg.refineModel") ?? "large-v3"));
+  // Off ("") is a preset choice for refine, not a custom repo.
+  let liveCustom = $state(!MODELS.includes(_savedLive));
+  let refineCustom = $state(_savedRefine !== OFF && !MODELS.includes(_savedRefine));
 
   function onModelSelect(which: "live" | "refine", value: string): void {
     const custom = value === CUSTOM;
@@ -247,6 +251,7 @@
         value={refineCustom ? CUSTOM : refineModel}
         onchange={(e) => onModelSelect("refine", e.currentTarget.value)}
       >
+        <option value={OFF}>Off (live only)</option>
         {#each MODELS as m (m)}<option value={m}>{m}</option>{/each}
         <option value={CUSTOM}>Custom HF repo…</option>
       </select>
@@ -261,7 +266,9 @@
       {#if store.status?.model}<span class="current">current: {store.status.model}</span>{/if}
     </div>
     <p class="hint">Bigger models are more accurate but slower. Two-tier: keep Live
-      fast (e.g. small.en) and set Refine large (e.g. large-v3). Any HF repo works.</p>
+      fast (e.g. small.en) and set Refine larger (e.g. large-v3). Refine = <strong>Off</strong>
+      for live-only — best on low-memory / single-GPU machines where a refine model
+      would contend for the GPU. Any HF repo works.</p>
   </section>
 
   <section class="look">
