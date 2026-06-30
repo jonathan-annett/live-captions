@@ -88,13 +88,20 @@ class RefinementPass:
             print(f"  refine:   FAILED to load {model}: {status.message}", flush=True)
             return
         # Warm the model before processing real audio (this is where a big model
-        # actually downloads/compiles — so "live" prints once refinement is ready).
+        # actually downloads/compiles). A failure here (e.g. an interrupted
+        # download) used to be swallowed silently — surface it and fall back to
+        # live-only rather than pretending refinement is running.
         try:
             import numpy as np
 
             self.engine.transcribe(np.zeros(16000, dtype="float32"), quality=True)
-        except Exception:  # noqa: BLE001 - warmup is best-effort
-            pass
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"  refine:   {model} failed to load ({exc}); running live-only "
+                "(check the model downloaded; set HF_TOKEN for the big models)",
+                flush=True,
+            )
+            return
         print(f"  refine:   live — {model} now refining captions", flush=True)
         while self._running.is_set():
             item = None
