@@ -63,6 +63,22 @@ def test_decode_without_words_emits_plain_segment():
     assert seg.words is None
 
 
+def test_catch_up_drains_silence_backlog_and_keeps_the_clock():
+    import queue
+
+    hub = CaptionHub()
+    streamer = LiveStreamer(hub, _FakeEngine(TranscribeResult(text="x")), sample_rate=16000)
+    streamer._frames = queue.Queue(maxsize=256)
+    for _ in range(50):  # ~1.6s of buffered frames
+        streamer._frames.put_nowait(np.zeros(streamer.block, dtype=np.float32))
+    streamer._in_utter = False
+    before = streamer._sample_count
+    streamer._catch_up()
+    assert streamer._frames.qsize() == 0  # backlog dropped
+    # Session clock advanced by the skipped audio so timestamps stay real-time.
+    assert streamer._sample_count == before + 50 * streamer.block
+
+
 class _RecordingRefiner:
     def __init__(self):
         self.submitted = []

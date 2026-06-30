@@ -19,6 +19,7 @@ from .engines.base import ASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, EngineStatus, Word
 from .refine import RefinementPass
+from .sanitize import collapse_repeats, is_degenerate
 from .vad import EnergyVAD
 
 
@@ -130,6 +131,9 @@ class LiveStreamer:
         self._preroll_cap = int(sample_rate * 0.25)
         self._partial_every = int(sample_rate * 0.7)
         self._max_utter = int(sample_rate * 14)
+        # If we fall this far behind real time (frames queued) AND we're between
+        # utterances, discard the buffered silence to catch up to the live edge.
+        self._catchup_frames = max(1, int(1.5 * sample_rate / self.block))
 
     def set_dictionary(self, terms: list[str]) -> None:
         self.dictionary = terms
@@ -146,6 +150,14 @@ class LiveStreamer:
         self.hub.emit_status(status)
         if status.state == "error":
             return
+        # Warm the model (download/compile) BEFORE opening the mic. MLX loads the
+        # model lazily on the first transcribe; without this, that cold first
+        # decode runs while audio is already being captured, and the resulting
+        # backlog never drains — it pins the latency for the whole session.
+        try:
+            self.engine.transcribe(np.zeros(self.sample_rate, dtype="float32"))
+        except Exception:  # noqa: BLE001 - warmup is best-effort
+            pass
         if self.refiner is not None:
             self.refiner.start()
 
@@ -193,6 +205,26 @@ class LiveStreamer:
             except queue.Empty:
                 continue
             self._on_frame(frame)
+            # Between utterances and behind real time? The backlog is silence —
+            # drop it to snap back to the live edge (no speech lost).
+            if not self._in_utter and self._frames.qsize() > self._catchup_frames:
+                self._catch_up()
+
+    def _catch_up(self) -> None:
+        import queue
+
+        dropped = 0
+        while True:
+            try:
+                dropped += len(self._frames.get_nowait())
+            except queue.Empty:
+                break
+        if dropped:
+            # Keep the session clock aligned with real time (we skipped this audio)
+            # and drop now-stale preroll so the next utterance starts clean.
+            self._sample_count += dropped
+            self._preroll = []
+            self._preroll_n = 0
 
     def _on_frame(self, frame: Any) -> None:
         self._sample_count += len(frame)
@@ -256,9 +288,14 @@ class LiveStreamer:
         end = self._sample_count / self.sample_rate
         hotwords = ", ".join(self.dictionary) if self.dictionary else None
         result = self.engine.transcribe(samples, hotwords=hotwords)
-        if not result.text:
+        raw = result.text
+        # Drop non-speech junk; collapse repetition loops at the source (so even
+        # partials don't flash the loop, and history/room/export stay clean).
+        if not raw or is_degenerate(raw):
             return
-        # Engine word timestamps are clip-relative; offset to session time.
+        text = collapse_repeats(raw)
+        # Engine word timestamps are clip-relative; offset to session time. Drop
+        # them if a loop was collapsed (the timings would no longer line up).
         words = (
             [
                 Word(
@@ -269,12 +306,10 @@ class LiveStreamer:
                 )
                 for w in result.words
             ]
-            if result.words
+            if result.words and text == raw
             else None
         )
-        seg = CaptionSegment(
-            id=seg_id, text=result.text, start=start, end=end, words=words
-        )
+        seg = CaptionSegment(id=seg_id, text=text, start=start, end=end, words=words)
         if final:
             self.hub.emit_final(seg)
             # Hand the utterance's audio to the background refinement pass (if on)

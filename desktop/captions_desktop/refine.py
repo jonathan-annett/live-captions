@@ -22,6 +22,7 @@ from typing import Any, Optional
 from .engines.base import ASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, Word
+from .sanitize import collapse_repeats, is_degenerate
 
 # Tail of refined text kept as the decode prompt (cross-utterance context).
 _PROMPT_TAIL = 400
@@ -74,6 +75,13 @@ class RefinementPass:
         status = self.engine.load()
         if status.state == "error":
             return
+        # Warm the model before processing real audio (avoid a cold first decode).
+        try:
+            import numpy as np
+
+            self.engine.transcribe(np.zeros(16000, dtype="float32"), quality=True)
+        except Exception:  # noqa: BLE001 - warmup is best-effort
+            pass
         while self._running.is_set():
             item = None
             with self._lock:
@@ -92,9 +100,10 @@ class RefinementPass:
         result = self.engine.transcribe(
             samples, hotwords=self._hotwords, quality=True, prompt=self._recent or None
         )
-        text = result.text.strip()
-        if not text:
+        raw = result.text.strip()
+        if not raw or is_degenerate(raw):
             return
+        text = collapse_repeats(raw)
         words = (
             [
                 Word(
