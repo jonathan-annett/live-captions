@@ -7,10 +7,19 @@ MLX runs on the Apple GPU. Used automatically on Apple Silicon when installed
 
 from __future__ import annotations
 
+import threading
 from typing import Any, Optional
 
 from ..protocol import EngineStatus, Word
 from .base import ASREngine, TranscribeResult, download_with_retry
+
+# MLX/Metal is NOT safe for concurrent kernel compile/dispatch — two threads in
+# transcribe at once (e.g. the live engine + the background refinement engine, or
+# a model hot-swap racing an in-flight decode) crashes with SIGABRT in
+# compile_and_invoke. This process-wide lock serializes every MLX decode across
+# ALL engine instances, so only one runs on the GPU at a time. (Live takes the
+# lock first; refinement is best-effort and simply waits its turn.)
+_MLX_LOCK = threading.Lock()
 
 
 def _clamp01(p: Any) -> Optional[float]:
@@ -96,7 +105,9 @@ class MLXWhisperEngine(ASREngine):
         prompt_parts = [p for p in (prompt, hotwords) if p]
         if prompt_parts:
             kwargs["initial_prompt"] = " ".join(prompt_parts)
-        result = self._mlx.transcribe(samples, **kwargs)
+        # Serialize Metal work across live + refine threads (see _MLX_LOCK).
+        with _MLX_LOCK:
+            result = self._mlx.transcribe(samples, **kwargs)
         text = (result.get("text") or "").strip()
         words: list[Word] = []
         for seg in result.get("segments") or []:
