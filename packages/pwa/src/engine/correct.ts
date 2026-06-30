@@ -65,3 +65,26 @@ export function applyEdit(
   else toks[index] = repl;
   return { ...seg, text: toks.join(" "), locked: true };
 }
+
+/**
+ * Next state for the line-merge boundary control. Binary (break ⇄ merge) when
+ * this segment already ends in hard punctuation — the merge would add nothing —
+ * else 3-state: break → comma → period → break.
+ */
+export function nextJoin(seg: CaptionSegment): CaptionSegment["joinNext"] {
+  const endsHard = /[.,]\s*$/.test(seg.text);
+  const cur = seg.joinNext;
+  if (endsHard) return cur ? undefined : "plain";
+  if (!cur) return "comma";
+  if (cur === "comma") return "period";
+  return undefined;
+}
+
+/** Set (or clear) a segment's join-to-next state, locking it as operator-set. */
+export function applyJoin(
+  seg: CaptionSegment,
+  join: CaptionSegment["joinNext"],
+): CaptionSegment {
+  const { joinNext: _drop, ...rest } = seg;
+  return join ? { ...rest, joinNext: join, locked: true } : { ...rest, locked: true };
+}

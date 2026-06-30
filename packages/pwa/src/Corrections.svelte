@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { CaptionSegment } from "@captions/protocol";
-  import { applyEdit, segmentTokens } from "./engine/correct.js";
+  import { joinSegments, type CaptionSegment } from "@captions/protocol";
+  import { applyEdit, applyJoin, nextJoin, segmentTokens } from "./engine/correct.js";
   import { suggestCorrections } from "./engine/suggest.js";
 
   interface Props {
@@ -28,6 +28,14 @@
   let shown = $state(PAGE);
   const visible = $derived(segments.slice(-shown));
   const hidden = $derived(Math.max(0, segments.length - shown));
+  // Rendered lines (operator merges applied); the boundary control after each
+  // segment except the very last lets the operator merge/split that boundary.
+  const lines = $derived(joinSegments(visible));
+  const lastId = $derived(visible[visible.length - 1]?.id);
+
+  function toggleJoin(seg: CaptionSegment) {
+    onApply(applyJoin(seg, nextJoin(seg)));
+  }
 
   // Auto-scroll: keep the newest in view, but don't yank the operator back to
   // the bottom while they've scrolled up to correct older text.
@@ -80,15 +88,31 @@
         ▲ Show {Math.min(PAGE, hidden)} earlier ({hidden} hidden)
       </button>
     {/if}
-    {#each visible as seg (seg.id)}
-      <div class="line" class:locked={seg.locked}>
-        {#each segmentTokens(seg) as tok, i (i)}
-          <button
-            class="word"
-            class:lowconf={tok.confidence !== undefined && tok.confidence < LOW_CONF}
-            class:active={sel?.id === seg.id && sel?.index === i}
-            onclick={() => pick(seg.id, i, tok.text)}
-          >{tok.text}</button>
+    {#each lines as line (line.key)}
+      <div class="line" class:locked={line.locked}>
+        {#each line.members as seg (seg.id)}
+          {#each segmentTokens(seg) as tok, i (i)}
+            <button
+              class="word"
+              class:lowconf={tok.confidence !== undefined && tok.confidence < LOW_CONF}
+              class:active={sel?.id === seg.id && sel?.index === i}
+              onclick={() => pick(seg.id, i, tok.text)}
+            >{tok.text}</button>
+          {/each}
+          {#if seg.id !== lastId}
+            <button
+              class="join"
+              class:merged={!!seg.joinNext}
+              title={seg.joinNext
+                ? "Merged with the next line — click to change"
+                : "Click to merge the next line"}
+              aria-label="Toggle line merge"
+              onclick={() => toggleJoin(seg)}
+            ><span class="ret">⏎</span>{#if seg.joinNext === "comma"}<span
+                  class="pc comma">,</span
+                >{:else if seg.joinNext === "period"}<span class="pc period">.</span
+                >{/if}</button>
+          {/if}
         {/each}
       </div>
     {/each}
@@ -186,6 +210,40 @@
   .word.active {
     background: #1f4d8f;
     color: #fff;
+  }
+  /* Line-merge boundary control (editor-only; never shown on air/audience). */
+  .join {
+    background: none;
+    border: none;
+    padding: 0 0.2rem;
+    margin: 0 0.05rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+    /* finger-sized so the same control works as a tap target on mobile */
+    min-width: 1.6rem;
+    min-height: 1.6rem;
+  }
+  .join:hover {
+    background: #333;
+  }
+  /* ⏎ bright = line break (default); dimmed once the next line is merged in. */
+  .join .ret {
+    color: #c8ccd2;
+  }
+  .join.merged .ret {
+    color: #555;
+  }
+  .join .pc {
+    font-weight: 700;
+    margin-left: 0.05rem;
+  }
+  .join .pc.comma {
+    color: #e3c45f;
+  }
+  .join .pc.period {
+    color: #e36f6f;
   }
   .editor {
     margin-top: 0.6rem;

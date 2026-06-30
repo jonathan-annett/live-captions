@@ -1,6 +1,6 @@
 import type { CaptionSegment } from "@captions/protocol";
 import { describe, expect, it } from "vitest";
-import { applyEdit, segmentTokens } from "./correct.js";
+import { applyEdit, applyJoin, nextJoin, segmentTokens } from "./correct.js";
 
 const withWords = (): CaptionSegment => ({
   id: "a",
@@ -62,6 +62,51 @@ describe("applyEdit (word-level)", () => {
   it("ignores an out-of-range index", () => {
     const seg = withWords();
     expect(applyEdit(seg, 9, "x")).toBe(seg);
+  });
+});
+
+describe("nextJoin (boundary toggle)", () => {
+  const s = (text: string, joinNext?: CaptionSegment["joinNext"]): CaptionSegment => ({
+    id: "a",
+    text,
+    start: 0,
+    end: 1,
+    joinNext,
+  });
+
+  it("3-state cycle when the line has no hard ending: break→comma→period→break", () => {
+    expect(nextJoin(s("no punctuation"))).toBe("comma");
+    expect(nextJoin(s("no punctuation", "comma"))).toBe("period");
+    expect(nextJoin(s("no punctuation", "period"))).toBeUndefined();
+  });
+
+  it("binary cycle when the line already ends hard: break⇄plain", () => {
+    expect(nextJoin(s("Ends here."))).toBe("plain");
+    expect(nextJoin(s("Ends here.", "plain"))).toBeUndefined();
+    expect(nextJoin(s("comma end,"))).toBe("plain");
+  });
+});
+
+describe("applyJoin", () => {
+  const s = (joinNext?: CaptionSegment["joinNext"]): CaptionSegment => ({
+    id: "a",
+    text: "x",
+    start: 0,
+    end: 1,
+    joinNext,
+  });
+
+  it("sets the join state and locks", () => {
+    const out = applyJoin(s(), "comma");
+    expect(out.joinNext).toBe("comma");
+    expect(out.locked).toBe(true);
+  });
+
+  it("clears the join state when undefined (back to break)", () => {
+    const out = applyJoin(s("period"), undefined);
+    expect(out.joinNext).toBeUndefined();
+    expect("joinNext" in out).toBe(false);
+    expect(out.locked).toBe(true);
   });
 });
 
