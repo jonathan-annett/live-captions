@@ -152,6 +152,14 @@
   let boxY = $state<number>(lookNum("boxY", 68));
   let boxW = $state<number>(lookNum("boxW", 88));
   let boxH = $state<number>(lookNum("boxH", 26));
+  // Auto height: derive the box height from #lines × font size (line-height 1.25
+  // on the display + a little padding), so the operator sizes by lines, not %.
+  let autoHeight = $state<boolean>(savedLook.autoHeight !== false);
+  let boxLines = $state<number>(lookNum("boxLines", 2));
+  const computedBoxH = $derived(
+    Math.min(100, Math.max(5, Math.round(fontSize * (1.3 * boxLines + 0.8)))),
+  );
+  const effectiveBoxH = $derived(autoHeight ? computedBoxH : boxH);
   // Show the live (un-finalized) "bleeding edge" hypothesis. Off = lower latency
   // captions but fewer mid-utterance errors on screen.
   let showLive = $state<boolean>(savedLook.showLive !== false);
@@ -171,7 +179,7 @@
       showPartial: showLive,
       ...(boxFill ? { boxColor, ...(boxRadius ? { boxRadius } : {}) } : {}),
       ...(boxEnabled
-        ? { region: { x: boxX, y: boxY, width: boxW, height: boxH } }
+        ? { region: { x: boxX, y: boxY, width: boxW, height: effectiveBoxH } }
         : {}),
       ...(qr ? { qr } : {}),
     };
@@ -196,6 +204,8 @@
         boxY,
         boxW,
         boxH,
+        autoHeight,
+        boxLines,
         showLive,
       }),
     );
@@ -517,10 +527,21 @@
         Box width · {boxW}%
         <input type="range" min="20" max="100" step="1" bind:value={boxW} />
       </label>
-      <label>
-        Box height · {boxH}%
-        <input type="range" min="10" max="100" step="1" bind:value={boxH} />
+      <label class="check">
+        <input type="checkbox" bind:checked={autoHeight} />
+        Auto height (from lines × font size)
       </label>
+      {#if autoHeight}
+        <label>
+          Lines · {boxLines} (height ≈ {effectiveBoxH}%)
+          <input type="range" min="1" max="6" step="1" bind:value={boxLines} />
+        </label>
+      {:else}
+        <label>
+          Box height · {boxH}%
+          <input type="range" min="10" max="100" step="1" bind:value={boxH} />
+        </label>
+      {/if}
     {/if}
 
     <label class="check">
