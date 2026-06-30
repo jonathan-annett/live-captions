@@ -3,6 +3,8 @@
 export interface LoadRequest {
   type: "load";
   model: string;
+  /** verbose [asr] logging in the worker (mirrors the page's ?debug) */
+  debug?: boolean;
 }
 
 export interface TranscribeRequest {

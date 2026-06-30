@@ -30,6 +30,8 @@ let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
 // Multilingual Whisper (e.g. large-v3-turbo) REQUIRES a language; the English-
 // only `.en` models must NOT be given one. Set from the model id at load time.
 let multilingual = false;
+// Verbose [asr] logging, mirrors the page's ?debug (set from the load message).
+let debug = false;
 
 // transformers.js's pipeline() overload set is a union too large for tsc to
 // represent; call it through a narrowed signature.
@@ -84,6 +86,7 @@ async function load(model: string): Promise<void> {
 self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const msg = ev.data;
   if (msg.type === "load") {
+    debug = msg.debug ?? false;
     await load(msg.model);
     return;
   }
@@ -91,7 +94,7 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   if (!transcriber) {
     // Model not ready yet (large models take a while to compile for WebGPU);
     // clips during this window return empty — log it so the silence is clear.
-    console.log("[asr] skip — model still loading/compiling");
+    if (debug) console.log("[asr] skip — model still loading/compiling");
     post({ type: "result", reqId: msg.reqId, text: "" });
     return;
   }
@@ -111,11 +114,12 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
       : (out.text ?? "");
-    // Always log decode output + how long inference took (one line) so we can
-    // see empty/odd/slow results even without ?debug — key for a model like turbo.
-    console.log(
-      `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms`,
-    );
+    // Decode output + inference time, under ?debug (helps diagnose models like turbo).
+    if (debug) {
+      console.log(
+        `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms`,
+      );
+    }
     post({ type: "result", reqId: msg.reqId, text: text.trim() });
   } catch (err) {
     // Transcribe failures were silent (turned into empty captions). Surface them.
