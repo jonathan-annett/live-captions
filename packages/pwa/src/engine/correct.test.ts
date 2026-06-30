@@ -107,6 +107,13 @@ describe("groupTokens (repetition collapse)", () => {
     ]);
   });
 
+  it("collapses a repeated phrase into one run group spanning period×count", () => {
+    const groups = groupTokens(fromText("I'm sorry. I'm sorry. I'm sorry. done"));
+    expect(groups[0]).toMatchObject({ kind: "run", period: 2, count: 3, text: "I'm sorry." });
+    // The run consumes 6 tokens (2 × 3); "done" follows as a word.
+    expect(groups[1]).toMatchObject({ kind: "word", text: "done" });
+  });
+
   it("does not collapse when keepRepeats is set (renders every word)", () => {
     const groups = groupTokens({
       ...fromText("ho ho ho ho"),

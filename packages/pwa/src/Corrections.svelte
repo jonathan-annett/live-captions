@@ -32,9 +32,13 @@
   const PAGE = 200;
 
   let sel = $state<{ id: string; index: number } | null>(null);
-  let runSel = $state<{ id: string; start: number; count: number; text: string } | null>(
-    null,
-  );
+  let runSel = $state<{
+    id: string;
+    start: number;
+    period: number;
+    count: number;
+    text: string;
+  } | null>(null);
   let replacement = $state("");
   let shown = $state(PAGE);
   const visible = $derived(segments.slice(-shown));
@@ -83,15 +87,22 @@
     sel = null;
   }
 
-  function pickRun(id: string, start: number, count: number, text: string) {
+  function pickRun(
+    id: string,
+    start: number,
+    period: number,
+    count: number,
+    text: string,
+  ) {
     sel = null;
-    runSel = { id, start, count, text };
+    runSel = { id, start, period, count, text };
   }
 
   function deleteRun() {
     if (!runSel) return;
     const seg = segments.find((s) => s.id === runSel!.id);
-    if (seg) onApply(applyRangeEdit(seg, runSel.start, runSel.count, 0));
+    // The run spans period × count tokens; delete the whole thing.
+    if (seg) onApply(applyRangeEdit(seg, runSel.start, runSel.period * runSel.count, 0));
     runSel = null;
   }
 
@@ -137,7 +148,7 @@
                 class="run"
                 class:active={runSel?.id === seg.id && runSel?.start === g.start}
                 title={`Repeated ${g.count}× — auto-collapsed to one. Click to delete or keep all.`}
-                onclick={() => pickRun(seg.id, g.start, g.count, g.text)}
+                onclick={() => pickRun(seg.id, g.start, g.period, g.count, g.text)}
               >{g.text}<span class="badge">×{g.count}</span></button>
             {/if}
           {/each}

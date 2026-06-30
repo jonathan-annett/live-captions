@@ -6,7 +6,7 @@
  * re-emit nor the background refinement pass overwrites it (see
  * `canReplaceSegment` in @captions/protocol).
  */
-import type { CaptionSegment, Word } from "@captions/protocol";
+import { findRepeatRuns, type CaptionSegment, type Word } from "@captions/protocol";
 
 export interface EditToken {
   text: string;
@@ -14,46 +14,52 @@ export interface EditToken {
   confidence?: number;
 }
 
-/** A rendered token group: a normal word, or a collapsed run of one repeated
- *  word (a Whisper repetition hallucination flagged for the operator). */
+/** A rendered token group: a normal word, or a collapsed repetition run (a
+ *  single word OR a repeated phrase — a Whisper loop flagged for the operator).
+ *  `count` = number of repeats; `period` = words per repeated phrase (1 = word);
+ *  the run spans `period * count` tokens from `start`. */
 export type TokenGroup =
   | { kind: "word"; index: number; text: string; confidence?: number }
-  | { kind: "run"; start: number; count: number; text: string };
-
-/** Comparable core of a token (lowercase, punctuation stripped). */
-function normWord(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9']/g, "");
-}
+  | { kind: "run"; start: number; period: number; count: number; text: string };
 
 /**
- * Group a segment's tokens, collapsing any run of the SAME word repeated `min`+
- * times in a row (default 3 — "more than twice") into a single flagged `run`
- * group. This is the operator-side antidote to Whisper repetition loops
- * (e.g. "warning warning warning…" on music/non-speech).
+ * Group a segment's tokens, collapsing any repetition loop — a single word
+ * repeated 3+ times OR a phrase repeated 3+ times — into a single flagged `run`
+ * group. The operator-side antidote to Whisper loops ("warning warning…",
+ * "I'm sorry. I'm sorry.…"). keepRepeats opts the segment out.
  */
-export function groupTokens(seg: CaptionSegment, min = 3): TokenGroup[] {
+export function groupTokens(seg: CaptionSegment): TokenGroup[] {
   const toks = segmentTokens(seg);
+  if (seg.keepRepeats) {
+    return toks.map((t, index) => ({
+      kind: "word",
+      index,
+      text: t.text,
+      confidence: t.confidence,
+    }));
+  }
+  const runs = findRepeatRuns(toks.map((t) => t.text));
   const groups: TokenGroup[] = [];
   let i = 0;
+  let r = 0;
   while (i < toks.length) {
-    const key = normWord(toks[i]!.text);
-    let j = i + 1;
-    while (j < toks.length && key && normWord(toks[j]!.text) === key) j++;
-    const count = j - i;
-    // keepRepeats = operator confirmed the repetition is real → don't collapse.
-    if (count >= min && key && !seg.keepRepeats) {
-      groups.push({ kind: "run", start: i, count, text: toks[i]!.text });
+    if (r < runs.length && runs[r]!.start === i) {
+      const run = runs[r++]!;
+      const phrase = toks
+        .slice(i, i + run.period)
+        .map((t) => t.text)
+        .join(" ");
+      groups.push({ kind: "run", start: i, period: run.period, count: run.reps, text: phrase });
+      i += run.period * run.reps;
     } else {
-      for (let k = i; k < j; k++) {
-        groups.push({
-          kind: "word",
-          index: k,
-          text: toks[k]!.text,
-          confidence: toks[k]!.confidence,
-        });
-      }
+      groups.push({
+        kind: "word",
+        index: i,
+        text: toks[i]!.text,
+        confidence: toks[i]!.confidence,
+      });
+      i++;
     }
-    i = j;
   }
   return groups;
 }

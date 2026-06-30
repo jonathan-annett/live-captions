@@ -103,23 +103,87 @@ export function normWord(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9']/g, "");
 }
 
+/** A maximal run of a repeated phrase: tokens [start, start+period*reps) are
+ *  `reps` consecutive copies of a `period`-word phrase. period 1 = a single word. */
+export interface RepeatRun {
+  start: number;
+  period: number;
+  reps: number;
+}
+
 /**
- * Collapse any run of the SAME word repeated `min`+ times in a row down to a
- * single instance — the antidote to Whisper repetition loops on music/non-speech
- * ("warning warning warning…"). Applied by default on every render surface so the
- * audience never sees the loop; a segment can opt out with `keepRepeats`.
+ * Find maximal consecutive phrase-repeat runs in a token list (normalized,
+ * case/punctuation-insensitive). Catches both single-word loops ("warning warning
+ * warning…", period 1) and phrase loops ("I'm sorry. I'm sorry.…", period 2+).
+ * Smallest period wins; a word run needs `minWord`+ copies, a phrase `minPhrase`+
+ * (so a natural double like "I'm sorry, I'm sorry" is spared).
  */
-export function collapseRepeats(text: string, min = 3): string {
+export function findRepeatRuns(
+  tokens: string[],
+  minWord = 3,
+  minPhrase = 3,
+  maxPeriod = 6,
+): RepeatRun[] {
+  const norm = tokens.map(normWord);
+  const runs: RepeatRun[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let best: RepeatRun | null = null;
+    for (let p = 1; p <= maxPeriod && i + 2 * p <= tokens.length; p++) {
+      // The block must contain at least one real (non-empty normalized) word.
+      let nonEmpty = false;
+      for (let k = 0; k < p; k++) if (norm[i + k]) nonEmpty = true;
+      if (!nonEmpty) continue;
+      let reps = 1;
+      for (;;) {
+        const base = i + reps * p;
+        if (base + p > tokens.length) break;
+        let match = true;
+        for (let k = 0; k < p; k++) {
+          if (norm[base + k] !== norm[i + k]) {
+            match = false;
+            break;
+          }
+        }
+        if (!match) break;
+        reps++;
+      }
+      if (reps >= (p === 1 ? minWord : minPhrase)) {
+        best = { start: i, period: p, reps };
+        break; // smallest period wins
+      }
+    }
+    if (best) {
+      runs.push(best);
+      i = best.start + best.period * best.reps;
+    } else {
+      i++;
+    }
+  }
+  return runs;
+}
+
+/**
+ * Collapse repetition loops down to a single occurrence — the antidote to Whisper
+ * hallucinations on music/non-speech, both single words ("warning warning…") and
+ * phrases ("I'm sorry. I'm sorry.…"). Applied by default on every render surface
+ * so the audience never sees the loop; a segment can opt out with `keepRepeats`.
+ */
+export function collapseRepeats(text: string, minWord = 3, minPhrase = 3): string {
   const toks = text.split(/\s+/).filter(Boolean);
+  const runs = findRepeatRuns(toks, minWord, minPhrase);
   const out: string[] = [];
   let i = 0;
+  let r = 0;
   while (i < toks.length) {
-    const key = normWord(toks[i]!);
-    let j = i + 1;
-    while (j < toks.length && key && normWord(toks[j]!) === key) j++;
-    if (j - i >= min && key) out.push(toks[i]!); // keep only the first
-    else for (let k = i; k < j; k++) out.push(toks[k]!);
-    i = j;
+    if (r < runs.length && runs[r]!.start === i) {
+      const run = runs[r++]!;
+      for (let k = 0; k < run.period; k++) out.push(toks[i + k]!); // keep one copy
+      i += run.period * run.reps;
+    } else {
+      out.push(toks[i]!);
+      i++;
+    }
   }
   return out.join(" ");
 }

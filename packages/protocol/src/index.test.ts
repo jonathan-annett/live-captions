@@ -157,7 +157,7 @@ describe("joinSegments (operator line-merge)", () => {
 });
 
 describe("collapseRepeats", () => {
-  it("collapses a 3+ run to one instance", () => {
+  it("collapses a 3+ single-word run to one instance", () => {
     expect(collapseRepeats("warning warning warning warning")).toBe("warning");
     expect(collapseRepeats("hi stop stop stop bye")).toBe("hi stop bye");
   });
@@ -166,6 +166,23 @@ describe("collapseRepeats", () => {
   });
   it("ignores case and punctuation when matching", () => {
     expect(collapseRepeats("No, no no no thanks")).toBe("No, thanks");
+  });
+  it("collapses a repeated PHRASE to one occurrence", () => {
+    expect(
+      collapseRepeats("I'm sorry. I'm sorry. I'm sorry. I'm sorry."),
+    ).toBe("I'm sorry.");
+    expect(
+      collapseRepeats("ok thank you thank you thank you thank you bye"),
+    ).toBe("ok thank you bye");
+  });
+  it("spares a natural double phrase (only 2 reps)", () => {
+    expect(collapseRepeats("I'm sorry, I'm sorry about that")).toBe(
+      "I'm sorry, I'm sorry about that",
+    );
+  });
+  it("prefers the smallest period (a word run inside a phrase)", () => {
+    // "na na na na na" is a single word repeated, not a 2-word phrase.
+    expect(collapseRepeats("na na na na na batman")).toBe("na batman");
   });
 });
 
