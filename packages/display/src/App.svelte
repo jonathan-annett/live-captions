@@ -42,6 +42,10 @@
   const boxColor = $derived(store.config.boxColor);
   const boxRadius = $derived(store.config.boxRadius ?? 0);
 
+  // In a fixed box we render a deeper window (bottom-anchored, clipped) so older
+  // text scrolls off the top; full-frame keeps the bounded rolling lines.
+  const visibleLines = $derived(region ? store.recentLines : store.lines);
+
   // Live-room QR overlay — only meaningful when the output is keyed, so it's
   // gated to chroma mode (it breaks out of the caption box onto the green).
   const qr = $derived(store.config.qr);
@@ -68,9 +72,9 @@
     style:top={region ? `${region.y}%` : null}
     style:width={region ? `${region.width}%` : null}
     style:height={region ? `${region.height}%` : null}
-    style:justify-content={region ? justify : null}
+    style:justify-content={region ? "flex-end" : null}
   >
-    {#each store.lines as line (line.text + line.partial)}
+    {#each visibleLines as line (line.key)}
       <div class="line" class:partial={line.partial}>{line.text}</div>
     {/each}
   </div>

@@ -8,6 +8,9 @@ import {
 
 /** Keep a bounded buffer of finals in the display (server owns full history). */
 const MAX_BUFFER = 200;
+/** Lines rendered into a fixed caption box — more than fit, so CSS clips the
+ * top for a smooth scroll-up effect (bounded so the DOM stays small). */
+const CLIP_LINES = 40;
 
 /**
  * Reactive caption state. Applies protocol messages to a renderable view:
@@ -51,15 +54,28 @@ export class CaptionStore {
     }
   };
 
-  /** Lines to render: trailing finals plus the partial, bounded by maxLines. */
-  get lines(): { text: string; partial: boolean }[] {
+  /** Filtered finals + (optional) partial, newest last, with stable keys. */
+  private buildLines(): { key: string; text: string; partial: boolean }[] {
     // Defensive: never render an empty line (e.g. a blank slipping in via history).
-    const out: { text: string; partial: boolean }[] = this.segments
+    const out = this.segments
       .filter((s) => s.text.trim() !== "")
-      .map((s) => ({ text: s.text, partial: false }));
+      .map((s) => ({ key: s.id, text: s.text, partial: false }));
+    // The partial (un-finalized "bleeding-edge" hypothesis) is hidden when the
+    // operator turns showPartial off — a bit more latency, fewer visible errors.
     if (this.partial && this.config.showPartial && this.partial.text.trim()) {
-      out.push({ text: this.partial.text, partial: true });
+      out.push({ key: "partial", text: this.partial.text, partial: true });
     }
-    return out.slice(-this.config.maxLines);
+    return out;
+  }
+
+  /** On-air rolling lines: trailing finals plus the partial, bounded by maxLines. */
+  get lines(): { key: string; text: string; partial: boolean }[] {
+    return this.buildLines().slice(-this.config.maxLines);
+  }
+
+  /** Deeper recent window for a fixed caption box — rendered bottom-anchored and
+   * clipped by CSS, so older text scrolls off the top instead of resizing the box. */
+  get recentLines(): { key: string; text: string; partial: boolean }[] {
+    return this.buildLines().slice(-CLIP_LINES);
   }
 }

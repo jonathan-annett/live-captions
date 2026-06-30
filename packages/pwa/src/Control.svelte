@@ -145,6 +145,16 @@
   let boxFill = $state<boolean>(savedLook.boxFill === true);
   let boxColor = $state<string>(lookStr("boxColor", "#000000"));
   let boxRadius = $state<number>(lookNum("boxRadius", 0));
+  // Fixed caption box (region, % of frame). When on, the display renders a deeper
+  // window clipped to this box, scrolling older text off the top.
+  let boxEnabled = $state<boolean>(savedLook.boxEnabled === true);
+  let boxX = $state<number>(lookNum("boxX", 6));
+  let boxY = $state<number>(lookNum("boxY", 68));
+  let boxW = $state<number>(lookNum("boxW", 88));
+  let boxH = $state<number>(lookNum("boxH", 26));
+  // Show the live (un-finalized) "bleeding edge" hypothesis. Off = lower latency
+  // captions but fewer mid-utterance errors on screen.
+  let showLive = $state<boolean>(savedLook.showLive !== false);
   let qr = $state<DisplayConfig["qr"]>(undefined);
 
   // Derived from its parts (never mutated in place) so updating it can't loop.
@@ -158,7 +168,11 @@
       fontFamily,
       fontSize,
       textAlign,
+      showPartial: showLive,
       ...(boxFill ? { boxColor, ...(boxRadius ? { boxRadius } : {}) } : {}),
+      ...(boxEnabled
+        ? { region: { x: boxX, y: boxY, width: boxW, height: boxH } }
+        : {}),
       ...(qr ? { qr } : {}),
     };
   });
@@ -177,6 +191,12 @@
         boxFill,
         boxColor,
         boxRadius,
+        boxEnabled,
+        boxX,
+        boxY,
+        boxW,
+        boxH,
+        showLive,
       }),
     );
   });
@@ -473,6 +493,35 @@
         <option value="right">Right</option>
       </select>
     </label>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={showLive} />
+      Show live text (off = a bit slower, fewer errors)
+    </label>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={boxEnabled} />
+      Fixed caption box (clips + scrolls within a set size)
+    </label>
+
+    {#if boxEnabled}
+      <label>
+        Box left · {boxX}%
+        <input type="range" min="0" max="90" step="1" bind:value={boxX} />
+      </label>
+      <label>
+        Box top · {boxY}%
+        <input type="range" min="0" max="95" step="1" bind:value={boxY} />
+      </label>
+      <label>
+        Box width · {boxW}%
+        <input type="range" min="20" max="100" step="1" bind:value={boxW} />
+      </label>
+      <label>
+        Box height · {boxH}%
+        <input type="range" min="10" max="100" step="1" bind:value={boxH} />
+      </label>
+    {/if}
 
     <label class="check">
       <input type="checkbox" bind:checked={boxFill} />
