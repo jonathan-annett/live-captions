@@ -2,32 +2,28 @@
  * Transcript export from finalized caption segments. Format logic lives here
  * (consumed by the PWA); the desktop build mirrors it in export.py.
  */
-import type { CaptionSegment } from "./index.js";
+import { joinSegments, type CaptionSegment } from "./index.js";
 
 export type ExportFormat = "txt" | "srt" | "vtt";
 
 export function toPlainText(segments: CaptionSegment[]): string {
-  return segments.map((s) => s.text).join("\n") + "\n";
+  return joinSegments(segments).map((l) => l.text).join("\n") + "\n";
 }
 
 export function toSRT(segments: CaptionSegment[]): string {
-  return (
-    segments
-      .map(
-        (s, i) =>
-          `${i + 1}\n${fmtTime(s.start, ",")} --> ${fmtTime(s.end, ",")}\n${s.text}\n`,
-      )
-      .join("\n")
-  );
+  return joinSegments(segments)
+    .map(
+      (l, i) =>
+        `${i + 1}\n${fmtTime(l.start, ",")} --> ${fmtTime(l.end, ",")}\n${l.text}\n`,
+    )
+    .join("\n");
 }
 
 export function toVTT(segments: CaptionSegment[]): string {
   return (
     "WEBVTT\n\n" +
-    segments
-      .map(
-        (s) => `${fmtTime(s.start, ".")} --> ${fmtTime(s.end, ".")}\n${s.text}\n`,
-      )
+    joinSegments(segments)
+      .map((l) => `${fmtTime(l.start, ".")} --> ${fmtTime(l.end, ".")}\n${l.text}\n`)
       .join("\n")
   );
 }

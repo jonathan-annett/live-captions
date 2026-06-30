@@ -14,7 +14,8 @@ from pydantic.alias_generators import to_camel
 
 # Bumped on breaking changes to the message shapes below.
 # v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
-PROTOCOL_VERSION = 2
+# v3: CaptionSegment gains `joinNext` (operator line-merge control).
+PROTOCOL_VERSION = 3
 
 
 class _Model(BaseModel):
@@ -50,6 +51,9 @@ class CaptionSegment(_Model):
     # Operator-corrected canonical text; not overwritten by the engine or the
     # background refinement pass (a locked update wins).
     locked: Optional[bool] = None
+    # Operator line-merge: how the next segment joins this one. None = line break;
+    # "plain" = merge w/o added punctuation; "comma"/"period" = merge inserting it.
+    join_next: Optional[Literal["plain", "comma", "period"]] = None
 
 
 # ---------------------------------------------------------------------------

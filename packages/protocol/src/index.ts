@@ -16,8 +16,9 @@ import { z } from "zod";
 export * from "./export.js";
 
 /** Bumped on breaking changes to the message shapes below.
- *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`. */
-export const PROTOCOL_VERSION = 2;
+ *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
+ *  v3: CaptionSegment gains `joinNext` (operator line-merge control). */
+export const PROTOCOL_VERSION = 3;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -34,6 +35,12 @@ export const WordSchema = z.object({
 });
 export type Word = z.infer<typeof WordSchema>;
 
+/** How the FOLLOWING segment joins this one when rendered (operator line-merge).
+ *  Absent = line break (default). "plain" = merge with no added punctuation (this
+ *  segment already ends in . or ,). "comma"/"period" = merge inserting that mark. */
+export const JoinNextSchema = z.enum(["plain", "comma", "period"]);
+export type JoinNext = z.infer<typeof JoinNextSchema>;
+
 export const CaptionSegmentSchema = z.object({
   /** stable id; a partial keeps the same id until it is finalized */
   id: z.string(),
@@ -49,6 +56,8 @@ export const CaptionSegmentSchema = z.object({
   /** operator-corrected: the canonical text. Not overwritten by the engine
    *  (live re-emit) or the background refinement pass; a locked update wins. */
   locked: z.boolean().optional(),
+  /** operator line-merge: how the next segment joins this one (see JoinNext) */
+  joinNext: JoinNextSchema.optional(),
 });
 export type CaptionSegment = z.infer<typeof CaptionSegmentSchema>;
 
@@ -64,6 +73,67 @@ export function canReplaceSegment(
   incoming: CaptionSegment,
 ): boolean {
   return !(existing?.locked && !incoming.locked);
+}
+
+/** One rendered line: one or more segments merged via the operator line-merge. */
+export interface JoinedLine {
+  /** stable key = first member's id */
+  key: string;
+  /** source segments, in order (≥1) */
+  members: CaptionSegment[];
+  /** merged display text */
+  text: string;
+  start: number;
+  end: number;
+  /** any member operator-locked */
+  locked: boolean;
+}
+
+/** True if `text` already ends in a hard period/comma so a merge mustn't add one. */
+function endsHard(text: string): boolean {
+  return /[.,]\s*$/.test(text);
+}
+
+/** Separator inserted before the next segment when merging onto `prevText`.
+ *  Context-aware: if `prevText` already ends in . or , the added mark is dropped. */
+export function joinSeparator(prevText: string, join: JoinNext): string {
+  if (endsHard(prevText)) return " ";
+  if (join === "comma") return ", ";
+  if (join === "period") return ". ";
+  return " ";
+}
+
+/**
+ * Group finalized segments into rendered lines, honoring each segment's
+ * `joinNext` (the operator line-merge control). Consecutive segments where the
+ * earlier one has `joinNext` set are concatenated into one line with contextual
+ * punctuation. Blank segments are skipped. Shared by every render surface
+ * (operator preview, on-air display, audience viewer, export) so merges look the
+ * same everywhere.
+ */
+export function joinSegments(segments: CaptionSegment[]): JoinedLine[] {
+  const lines: JoinedLine[] = [];
+  for (const seg of segments) {
+    if (!seg.text.trim()) continue;
+    const line = lines[lines.length - 1];
+    const prev = line?.members[line.members.length - 1];
+    if (line && prev?.joinNext) {
+      line.text += joinSeparator(line.text, prev.joinNext) + seg.text.trim();
+      line.members.push(seg);
+      line.end = seg.end;
+      line.locked = line.locked || !!seg.locked;
+    } else {
+      lines.push({
+        key: seg.id,
+        members: [seg],
+        text: seg.text.trim(),
+        start: seg.start,
+        end: seg.end,
+        locked: !!seg.locked,
+      });
+    }
+  }
+  return lines;
 }
 
 // ---------------------------------------------------------------------------

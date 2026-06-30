@@ -7,6 +7,7 @@
     type ConnectionState,
   } from "./sources/index.js";
   import { connectionView, isNearBottom } from "./viewerView.js";
+  import { joinSegments } from "@captions/protocol";
 
   // Audience-facing mobile viewer: an uncapped, scroll-back transcript bound to
   // a ViewerStore. The source can be injected (e.g. the /room page builds a
@@ -71,8 +72,8 @@
     {#if store.segments.length === 0 && !store.partial}
       <p class="empty">Waiting for captions…</p>
     {/if}
-    {#each store.segments as segment (segment.id)}
-      <p class="line">{segment.text}</p>
+    {#each joinSegments(store.segments) as line (line.key)}
+      <p class="line">{line.text}</p>
     {/each}
     {#if store.partial && store.config.showPartial}
       <p class="line partial">{store.partial.text}</p>

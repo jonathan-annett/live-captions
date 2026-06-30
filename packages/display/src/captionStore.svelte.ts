@@ -1,6 +1,7 @@
 import {
   canReplaceSegment,
   DEFAULT_DISPLAY_CONFIG,
+  joinSegments,
   type CaptionSegment,
   type DisplayConfig,
   type EngineStatus,
@@ -69,10 +70,13 @@ export class CaptionStore {
 
   /** Filtered finals + (optional) partial, newest last, with stable keys. */
   private buildLines(): { key: string; text: string; partial: boolean }[] {
-    // Defensive: never render an empty line (e.g. a blank slipping in via history).
-    const out = this.segments
-      .filter((s) => s.text.trim() !== "")
-      .map((s) => ({ key: s.id, text: s.text, partial: false }));
+    // joinSegments merges operator-linked lines and drops blanks; a merged line
+    // counts as one toward maxLines/the clip window below.
+    const out = joinSegments(this.segments).map((l) => ({
+      key: l.key,
+      text: l.text,
+      partial: false,
+    }));
     // The partial (un-finalized "bleeding-edge" hypothesis) is hidden when the
     // operator turns showPartial off — a bit more latency, fewer visible errors.
     if (this.partial && this.config.showPartial && this.partial.text.trim()) {
