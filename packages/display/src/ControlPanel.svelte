@@ -2,11 +2,12 @@
   import { onMount } from "svelte";
   import {
     DEFAULT_DISPLAY_CONFIG,
-    joinSegments,
     type Background,
+    type CaptionSegment,
     type DisplayConfig,
   } from "@captions/protocol";
   import { ControlSocket } from "./controlSocket.js";
+  import Corrections from "./Corrections.svelte";
   import { ViewerStore } from "./viewerStore.svelte.js";
   import { connectionView } from "./viewerView.js";
   import type { ConnectionState } from "./sources/types.js";
@@ -172,7 +173,28 @@
     lsSet("cg.refineModel", refine);
   }
 
-  const previewLines = $derived(joinSegments(store.segments).slice(-8));
+  // --- operator corrections -------------------------------------------------
+  // Each edit computes a corrected (locked) segment via the shared pure logic and
+  // sends it as `editSegment`; the server upserts it into the hub (lock-aware) and
+  // rebroadcasts, so it lands on the on-air display + room + this preview.
+  const dictTerms = $derived(
+    dictionaryText.split(/[\n,]/).map((t) => t.trim()).filter(Boolean),
+  );
+  let undoStack = $state<CaptionSegment[]>([]);
+
+  function applyCorrection(seg: CaptionSegment): void {
+    const prior = store.segments.find((s) => s.id === seg.id);
+    if (prior) undoStack = [...undoStack, { ...prior }];
+    socket?.send({ type: "editSegment", segment: seg });
+  }
+
+  function undoCorrection(): void {
+    const prior = undoStack.at(-1);
+    if (!prior) return;
+    undoStack = undoStack.slice(0, -1);
+    // Force the restore to win over the current locked text.
+    socket?.send({ type: "editSegment", segment: { ...prior, locked: true } });
+  }
 </script>
 
 <main>
@@ -296,16 +318,17 @@
   </section>
 
   <section class="preview">
-    <h2>Preview</h2>
-    {#if previewLines.length === 0 && !store.partial}
-      <p class="empty">Captions appear here when running.</p>
-    {/if}
-    {#each previewLines as line (line.key)}
-      <div class="line">{line.text}</div>
-    {/each}
+    <h2>Captions</h2>
     {#if store.partial && showLive}
       <div class="line partial">{store.partial.text}</div>
     {/if}
+    <Corrections
+      segments={store.segments}
+      dictionary={dictTerms}
+      onApply={applyCorrection}
+      onUndo={undoCorrection}
+      canUndo={undoStack.length > 0}
+    />
   </section>
 </main>
 

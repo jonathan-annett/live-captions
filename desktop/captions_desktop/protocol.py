@@ -17,7 +17,8 @@ from pydantic.alias_generators import to_camel
 # v3: CaptionSegment gains `joinNext` (operator line-merge control).
 # v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
 # v5: `setModel` client message (desktop live/refine model hot-swap).
-PROTOCOL_VERSION = 5
+# v6: `editSegment` client message (operator correction over the control WS).
+PROTOCOL_VERSION = 6
 
 
 class _Model(BaseModel):
@@ -251,6 +252,13 @@ class SetModelMessage(_Model):
     refine_model: Optional[str] = None
 
 
+class EditSegmentMessage(_Model):
+    # Operator correction from a control client: the corrected (locked) segment,
+    # applied to the canonical log by id (lock-aware upsert) and rebroadcast.
+    type: Literal["editSegment"] = "editSegment"
+    segment: CaptionSegment
+
+
 ClientMessage = Annotated[
     Union[
         SetConfigMessage,
@@ -258,6 +266,7 @@ ClientMessage = Annotated[
         ControlCommand,
         RequestHistoryMessage,
         SetModelMessage,
+        EditSegmentMessage,
     ],
     Field(discriminator="type"),
 ]

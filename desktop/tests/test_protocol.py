@@ -7,6 +7,7 @@ import json
 from captions_desktop.protocol import (
     DEFAULT_DISPLAY_CONFIG,
     CaptionSegment,
+    EditSegmentMessage,
     FinalMessage,
     SetModelMessage,
     Word,
@@ -29,6 +30,26 @@ def test_set_model_message_refine_optional():
     msg = parse_client_message(json.dumps({"type": "setModel", "model": "tiny.en"}))
     assert isinstance(msg, SetModelMessage)
     assert msg.refine_model is None
+
+
+def test_edit_segment_message_parses():
+    msg = parse_client_message(
+        json.dumps(
+            {
+                "type": "editSegment",
+                "segment": {
+                    "id": "a",
+                    "text": "Kubernetes",
+                    "start": 0,
+                    "end": 1,
+                    "locked": True,
+                },
+            }
+        )
+    )
+    assert isinstance(msg, EditSegmentMessage)
+    assert msg.segment.text == "Kubernetes"
+    assert msg.segment.locked is True
 
 
 def test_final_message_round_trips_camelcase():

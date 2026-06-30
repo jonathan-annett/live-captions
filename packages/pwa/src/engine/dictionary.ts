@@ -7,6 +7,7 @@
  * canonical term. Conservative by design — exact matches and short/distant words
  * are left alone — to avoid corrupting otherwise-correct text.
  */
+import { levenshtein } from "@captions/protocol";
 
 export function correctText(text: string, terms: string[]): string {
   const single = terms
@@ -38,22 +39,4 @@ function matchCase(original: string, replacement: string): string {
     return replacement[0]!.toUpperCase() + replacement.slice(1);
   }
   return replacement;
-}
-
-export function levenshtein(a: string, b: string): number {
-  const m = a.length;
-  const n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  let prev = Array.from({ length: n + 1 }, (_, i) => i);
-  let curr = new Array<number>(n + 1);
-  for (let i = 1; i <= m; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
-    }
-    [prev, curr] = [curr, prev];
-  }
-  return prev[n]!;
 }

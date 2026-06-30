@@ -13,8 +13,7 @@
     "@captions/display": "workspace:*",
     "@captions/protocol": "workspace:*",
     "@captions/room": "workspace:*",
-    "@huggingface/transformers": "^3.0.0",
-    "double-metaphone": "^2.0.1"
+    "@huggingface/transformers": "^3.0.0"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

@@ -4,9 +4,9 @@
  * A correction replaces or suppresses one token of a finalized segment and marks
  * the result `locked` (the operator's canonical text), so neither a live engine
  * re-emit nor the background refinement pass overwrites it (see
- * `canReplaceSegment` in @captions/protocol).
+ * `canReplaceSegment`). Shared by both clients (PWA + desktop control panel).
  */
-import { findRepeatRuns, type CaptionSegment, type Word } from "@captions/protocol";
+import { findRepeatRuns, type CaptionSegment, type Word } from "./index.js";
 
 export interface EditToken {
   text: string;

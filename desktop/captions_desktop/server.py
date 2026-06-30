@@ -17,6 +17,7 @@ from .export import export_transcript
 from .hub import CaptionHub
 from .protocol import (
     ControlCommand,
+    EditSegmentMessage,
     HistoryMessage,
     RequestHistoryMessage,
     SetConfigMessage,
@@ -165,3 +166,7 @@ def _handle_client(
         controller.set_dictionary(msg.terms)
     elif isinstance(msg, SetModelMessage):
         controller.set_model(msg.model, msg.refine_model)
+    elif isinstance(msg, EditSegmentMessage):
+        # Operator correction: emit as a final → hub upserts by id (lock-aware),
+        # replacing the segment in place and rebroadcasting to display + room.
+        hub.emit_final(msg.segment)

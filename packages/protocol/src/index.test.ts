@@ -257,4 +257,13 @@ describe("client messages", () => {
     });
     expect(b.type === "setModel" && b.refineModel).toBe("large-v3");
   });
+
+  it("parses an editSegment message (operator correction)", () => {
+    const parsed = parseClientMessage({
+      type: "editSegment",
+      segment: { id: "a", text: "Kubernetes", start: 0, end: 1, locked: true },
+    });
+    expect(parsed.type === "editSegment" && parsed.segment.text).toBe("Kubernetes");
+    expect(parsed.type === "editSegment" && parsed.segment.locked).toBe(true);
+  });
 });

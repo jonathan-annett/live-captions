@@ -14,13 +14,16 @@
 import { z } from "zod";
 
 export * from "./export.js";
+export * from "./correct.js";
+export * from "./suggest.js";
 
 /** Bumped on breaking changes to the message shapes below.
  *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
  *  v3: CaptionSegment gains `joinNext` (operator line-merge control).
  *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
- *  v5: `setModel` client message (desktop live/refine model hot-swap). */
-export const PROTOCOL_VERSION = 5;
+ *  v5: `setModel` client message (desktop live/refine model hot-swap).
+ *  v6: `editSegment` client message (operator correction over the control WS). */
+export const PROTOCOL_VERSION = 6;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -102,6 +105,25 @@ function endsHard(text: string): boolean {
 /** Comparable core of a word (lowercase, punctuation stripped). */
 export function normWord(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9']/g, "");
+}
+
+/** Levenshtein edit distance (shared by dictionary correction + sound-alike ranking). */
+export function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  let curr = new Array<number>(n + 1);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(prev[j]! + 1, curr[j - 1]! + 1, prev[j - 1]! + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n]!;
 }
 
 /** A maximal run of a repeated phrase: tokens [start, start+period*reps) are
@@ -420,6 +442,12 @@ export const SetModelMessageSchema = z.object({
   /** refinement-pass model; omit to leave it unchanged */
   refineModel: z.string().optional(),
 });
+/** Operator correction from a control client: the corrected (locked) segment,
+ *  applied to the canonical log by id (lock-aware upsert) and rebroadcast. */
+export const EditSegmentMessageSchema = z.object({
+  type: z.literal("editSegment"),
+  segment: CaptionSegmentSchema,
+});
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetConfigMessageSchema,
@@ -427,6 +455,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ControlCommandSchema,
   RequestHistoryMessageSchema,
   SetModelMessageSchema,
+  EditSegmentMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 

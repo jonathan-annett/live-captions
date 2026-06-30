@@ -1,4 +1,4 @@
-import type { CaptionSegment } from "@captions/protocol";
+import type { CaptionSegment } from "./index.js";
 import { describe, expect, it } from "vitest";
 import {
   applyEdit,

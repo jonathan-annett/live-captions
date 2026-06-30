@@ -8,7 +8,7 @@
  * just surfaces the obvious candidates (e.g. "cooper netties" → "Kubernetes").
  */
 import { doubleMetaphone } from "double-metaphone";
-import { levenshtein } from "./dictionary.js";
+import { levenshtein } from "./index.js";
 
 export interface Suggestion {
   term: string;
