@@ -27,6 +27,11 @@ function dtypeFor(model: string, device: (typeof DEVICES)[number]): unknown {
 }
 
 let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
+// Multilingual Whisper (e.g. large-v3-turbo) REQUIRES a language; the English-
+// only `.en` models must NOT be given one. Set from the model id at load time.
+let multilingual = false;
+// Verbose [asr] logging, mirrors the page's ?debug (set from the load message).
+let debug = false;
 
 // transformers.js's pipeline() overload set is a union too large for tsc to
 // represent; call it through a narrowed signature.
@@ -40,6 +45,7 @@ const post = (msg: WorkerEvent, transfer: Transferable[] = []) =>
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 
 async function load(model: string): Promise<void> {
+  multilingual = !model.endsWith(".en");
   let lastErr: unknown;
   for (const device of DEVICES) {
     // Aggregate per-file download progress into a single loaded/total.
@@ -80,19 +86,26 @@ async function load(model: string): Promise<void> {
 self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   const msg = ev.data;
   if (msg.type === "load") {
+    debug = msg.debug ?? false;
     await load(msg.model);
     return;
   }
   // transcribe
   if (!transcriber) {
+    // Model not ready yet (large models take a while to compile for WebGPU);
+    // clips during this window return empty — log it so the silence is clear.
+    if (debug) console.log("[asr] skip — model still loading/compiling");
     post({ type: "result", reqId: msg.reqId, text: "" });
     return;
   }
   try {
+    const t0 = performance.now();
     const out = await transcriber(msg.samples, {
-      // English-only (.en) models need no language/task; harmless if multilingual.
       chunk_length_s: 30,
       return_timestamps: false,
+      // Multilingual models (large-v3-turbo) require a language + task; the
+      // `.en` models reject them. (Language selection is a future feature.)
+      ...(multilingual ? { language: "en", task: "transcribe" } : {}),
       // NOTE: no_repeat_ngram_size/repetition_penalty were tried here to break
       // repetition loops, but they derail Whisper on real speech (collapsing
       // output to a single token like "[" or "W"). Silence hallucinations are
@@ -101,8 +114,16 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
     const text = Array.isArray(out)
       ? out.map((o) => o.text).join(" ")
       : (out.text ?? "");
+    // Decode output + inference time, under ?debug (helps diagnose models like turbo).
+    if (debug) {
+      console.log(
+        `[asr] decoded ${JSON.stringify(text.trim())} in ${Math.round(performance.now() - t0)}ms`,
+      );
+    }
     post({ type: "result", reqId: msg.reqId, text: text.trim() });
   } catch (err) {
+    // Transcribe failures were silent (turned into empty captions). Surface them.
+    console.error("[asr] transcribe failed:", err);
     post({ type: "error", reqId: msg.reqId, message: String(err) });
   }
 };

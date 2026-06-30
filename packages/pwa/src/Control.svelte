@@ -6,16 +6,21 @@
 
   const CHANNEL = "captions";
   // `size` is the approximate one-time download (cached after first use), shown
-  // in the picker so the cost is clear before choosing.
-  const MODELS = [
+  // in the picker so the cost is clear before choosing. Large models are gated
+  // behind ?experimental=1 — they transcribe correctly but are far too slow for
+  // real-time on a typical in-browser WebGPU; they want a strong GPU.
+  const EXPERIMENTAL = new URLSearchParams(location.search).has("experimental");
+  const MODELS: { id: string; label: string; size: string; experimental?: boolean }[] = [
     { id: "onnx-community/whisper-tiny.en", label: "tiny.en — fastest", size: "~100 MB" },
     { id: "onnx-community/whisper-small.en", label: "small.en — accurate", size: "~300 MB" },
     {
       id: "onnx-community/whisper-large-v3-turbo",
-      label: "large-v3-turbo — best",
-      size: "~0.6 GB · WebGPU",
+      label: "large-v3-turbo — experimental",
+      size: "~0.6 GB · strong GPU",
+      experimental: true,
     },
   ];
+  const availableModels = MODELS.filter((m) => !m.experimental || EXPERIMENTAL);
 
   const appName = location.hostname.endsWith("caption.guru")
     ? "Caption Guru"
@@ -44,10 +49,12 @@
   let mics = $state<MediaDeviceInfo[]>([]);
   const storedModel = lsGet(LS_MODEL);
   let deviceId = $state<string>(lsGet(LS_DEVICE) ?? "");
-  // Restore the saved model only if it's still a known option; else default to
-  // small.en (MODELS[1]).
+  // Restore the saved model only if it's currently available (experimental
+  // models are hidden unless ?experimental=1); else default to small.en.
   let model = $state(
-    MODELS.some((m) => m.id === storedModel) ? storedModel! : MODELS[1]!.id,
+    availableModels.some((m) => m.id === storedModel)
+      ? storedModel!
+      : (availableModels[1] ?? availableModels[0]!).id,
   );
   const selectedModel = $derived(MODELS.find((m) => m.id === model));
   let dictionaryText = $state("");
@@ -214,7 +221,7 @@
     <label>
       Model
       <select bind:value={model} disabled={running}>
-        {#each MODELS as m (m.id)}
+        {#each availableModels as m (m.id)}
           <option value={m.id}>{m.label} · {m.size}</option>
         {/each}
       </select>

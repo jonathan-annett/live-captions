@@ -97,7 +97,7 @@ export class Captioner {
     });
     this.worker.onmessage = (ev: MessageEvent<WorkerEvent>) =>
       this.onWorkerEvent(ev.data);
-    this.worker.postMessage({ type: "load", model: this.opts.model });
+    this.worker.postMessage({ type: "load", model: this.opts.model, debug: DEBUG });
 
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
