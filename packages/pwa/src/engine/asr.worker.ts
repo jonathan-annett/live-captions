@@ -89,6 +89,9 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   }
   // transcribe
   if (!transcriber) {
+    // Model not ready yet (large models take a while to compile for WebGPU);
+    // clips during this window return empty — log it so the silence is clear.
+    console.log("[asr] skip — model still loading/compiling");
     post({ type: "result", reqId: msg.reqId, text: "" });
     return;
   }
