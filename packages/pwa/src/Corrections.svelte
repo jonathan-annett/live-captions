@@ -19,9 +19,28 @@
 
   // Words below this (heuristic/decoder) confidence are highlighted as suspect.
   const LOW_CONF = 0.6;
+  // How many recent segments to render at once (bounded DOM); "Show earlier"
+  // grows the window so the operator can reach back through the whole session.
+  const PAGE = 200;
 
   let sel = $state<{ id: string; index: number } | null>(null);
   let replacement = $state("");
+  let shown = $state(PAGE);
+  const visible = $derived(segments.slice(-shown));
+  const hidden = $derived(Math.max(0, segments.length - shown));
+
+  // Auto-scroll: keep the newest in view, but don't yank the operator back to
+  // the bottom while they've scrolled up to correct older text.
+  let linesEl = $state<HTMLDivElement | undefined>(undefined);
+  let stick = $state(true);
+  function onScroll() {
+    if (!linesEl) return;
+    stick = linesEl.scrollTop + linesEl.clientHeight >= linesEl.scrollHeight - 24;
+  }
+  $effect(() => {
+    void segments.length; // re-run as finals arrive
+    if (stick && linesEl) linesEl.scrollTop = linesEl.scrollHeight;
+  });
 
   const selSeg = $derived(
     sel ? (segments.find((s) => s.id === sel!.id) ?? null) : null,
@@ -55,8 +74,13 @@
     <p class="empty">Finalized captions appear here — click a word to correct it.</p>
   {/if}
 
-  <div class="lines">
-    {#each segments as seg (seg.id)}
+  <div class="lines" bind:this={linesEl} onscroll={onScroll}>
+    {#if hidden > 0}
+      <button class="earlier" onclick={() => (shown += PAGE)}>
+        ▲ Show {Math.min(PAGE, hidden)} earlier ({hidden} hidden)
+      </button>
+    {/if}
+    {#each visible as seg (seg.id)}
       <div class="line" class:locked={seg.locked}>
         {#each segmentTokens(seg) as tok, i (i)}
           <button
@@ -121,11 +145,19 @@
     margin: 0.25rem 0;
   }
   .lines {
-    max-height: 11rem;
+    max-height: 20rem;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
+  }
+  .earlier {
+    align-self: center;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.7rem;
+    margin-bottom: 0.2rem;
+    color: #9ab;
+    background: #1a1a1a;
   }
   .line {
     line-height: 1.5;

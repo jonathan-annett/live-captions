@@ -742,7 +742,7 @@
       <div class="line partial">{store.partial.text}</div>
     {/if}
     <Corrections
-      segments={store.finals.slice(-12)}
+      segments={store.finals}
       dictionary={dictionaryTerms()}
       onApply={applyCorrection}
       onUndo={undoCorrection}
