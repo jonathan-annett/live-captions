@@ -27,6 +27,9 @@ function dtypeFor(model: string, device: (typeof DEVICES)[number]): unknown {
 }
 
 let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
+// Multilingual Whisper (e.g. large-v3-turbo) REQUIRES a language; the English-
+// only `.en` models must NOT be given one. Set from the model id at load time.
+let multilingual = false;
 
 // transformers.js's pipeline() overload set is a union too large for tsc to
 // represent; call it through a narrowed signature.
@@ -40,6 +43,7 @@ const post = (msg: WorkerEvent, transfer: Transferable[] = []) =>
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 
 async function load(model: string): Promise<void> {
+  multilingual = !model.endsWith(".en");
   let lastErr: unknown;
   for (const device of DEVICES) {
     // Aggregate per-file download progress into a single loaded/total.
@@ -90,9 +94,11 @@ self.onmessage = async (ev: MessageEvent<WorkerRequest>) => {
   }
   try {
     const out = await transcriber(msg.samples, {
-      // English-only (.en) models need no language/task; harmless if multilingual.
       chunk_length_s: 30,
       return_timestamps: false,
+      // Multilingual models (large-v3-turbo) require a language + task; the
+      // `.en` models reject them. (Language selection is a future feature.)
+      ...(multilingual ? { language: "en", task: "transcribe" } : {}),
       // NOTE: no_repeat_ngram_size/repetition_penalty were tried here to break
       // repetition loops, but they derail Whisper on real speech (collapsing
       // output to a single token like "[" or "W"). Silence hallucinations are
