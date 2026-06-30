@@ -102,6 +102,10 @@ class DisplayConfig(_Model):
     mode: Literal["rolling", "scroll"]
     show_partial: bool
     uppercase: bool
+    # Opaque caption-box fill behind the text; None/transparent = see-through.
+    box_color: Optional[str] = None
+    # Caption-box corner radius in vh (rounded corners); None/0 = square.
+    box_radius: Optional[float] = None
     # Operator-placed caption box (% of frame); None = full-frame + position.
     region: Optional[CaptionRegion] = None
     # Live-room QR overlay; the display shows it only in chroma-key mode.

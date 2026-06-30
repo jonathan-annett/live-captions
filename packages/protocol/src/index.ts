@@ -109,6 +109,10 @@ export const DisplayConfigSchema = z.object({
   /** show the live (un-finalized) hypothesis in a dimmed style */
   showPartial: z.boolean(),
   uppercase: z.boolean(),
+  /** opaque caption-box fill behind the text; omit/transparent = see-through */
+  boxColor: z.string().optional(),
+  /** caption-box corner radius in vh (rounded corners); 0/omit = square */
+  boxRadius: z.number().min(0).optional(),
   /** operator-placed caption box (% of frame); omitted = full-frame + position */
   region: CaptionRegionSchema.optional(),
   /** live-room QR overlay; rendered by the display only in chroma-key mode */

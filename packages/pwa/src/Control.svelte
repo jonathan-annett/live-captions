@@ -105,15 +105,76 @@
   // The control owns the on-air display config (pushed over the channel). The
   // QR overlay only renders on the display in chroma-key mode (by design).
   const configChannel = new BroadcastChannel(CHANNEL);
-  let bgKind = $state<Background["kind"]>(DEFAULT_DISPLAY_CONFIG.background.kind);
-  let bgColor = $state<string>("#00b140");
+
+  // On-air look (persisted to localStorage). Three colours: chroma key (bgColor),
+  // optional opaque caption-box fill (boxColor), and text (textColor); plus font,
+  // size and justification.
+  const FONTS = [
+    { label: "Sans (Inter)", value: DEFAULT_DISPLAY_CONFIG.fontFamily },
+    { label: "System UI", value: "system-ui, sans-serif" },
+    { label: "Serif", value: "Georgia, 'Times New Roman', serif" },
+    { label: "Monospace", value: "'SF Mono', Consolas, ui-monospace, monospace" },
+  ];
+  const LS_LOOK = "cg.look";
+  const savedLook: Record<string, unknown> = (() => {
+    try {
+      return JSON.parse(lsGet(LS_LOOK) ?? "{}") as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
+  const lookStr = (k: string, d: string) =>
+    typeof savedLook[k] === "string" ? (savedLook[k] as string) : d;
+  const lookNum = (k: string, d: number) =>
+    typeof savedLook[k] === "number" ? (savedLook[k] as number) : d;
+
+  let bgKind = $state<Background["kind"]>(
+    (savedLook.bgKind as Background["kind"]) ?? DEFAULT_DISPLAY_CONFIG.background.kind,
+  );
+  let bgColor = $state<string>(lookStr("bgColor", "#00b140"));
+  let textColor = $state<string>(lookStr("textColor", DEFAULT_DISPLAY_CONFIG.color));
+  let fontFamily = $state<string>(lookStr("fontFamily", DEFAULT_DISPLAY_CONFIG.fontFamily));
+  let fontSize = $state<number>(lookNum("fontSize", DEFAULT_DISPLAY_CONFIG.fontSize));
+  let textAlign = $state<DisplayConfig["textAlign"]>(
+    (savedLook.textAlign as DisplayConfig["textAlign"]) ?? DEFAULT_DISPLAY_CONFIG.textAlign,
+  );
+  let boxFill = $state<boolean>(savedLook.boxFill === true);
+  let boxColor = $state<string>(lookStr("boxColor", "#000000"));
+  let boxRadius = $state<number>(lookNum("boxRadius", 0));
   let qr = $state<DisplayConfig["qr"]>(undefined);
 
   // Derived from its parts (never mutated in place) so updating it can't loop.
   const displayConfig = $derived.by<DisplayConfig>(() => {
     const background: Background =
       bgKind === "transparent" ? { kind: "transparent" } : { kind: bgKind, color: bgColor };
-    return { ...DEFAULT_DISPLAY_CONFIG, background, ...(qr ? { qr } : {}) };
+    return {
+      ...DEFAULT_DISPLAY_CONFIG,
+      background,
+      color: textColor,
+      fontFamily,
+      fontSize,
+      textAlign,
+      ...(boxFill ? { boxColor, ...(boxRadius ? { boxRadius } : {}) } : {}),
+      ...(qr ? { qr } : {}),
+    };
+  });
+
+  // Persist the look (qr is room-driven, not part of the saved look).
+  $effect(() => {
+    lsSet(
+      LS_LOOK,
+      JSON.stringify({
+        bgKind,
+        bgColor,
+        textColor,
+        fontFamily,
+        fontSize,
+        textAlign,
+        boxFill,
+        boxColor,
+        boxRadius,
+      }),
+    );
   });
 
   // Push to the on-air display whenever the config changes (write-only side
@@ -376,8 +437,52 @@
 
     {#if bgKind !== "transparent"}
       <label>
-        Background color
+        {bgKind === "chroma" ? "Chroma key color" : "Background color"}
         <input type="color" bind:value={bgColor} />
+      </label>
+    {/if}
+
+    <label>
+      Text color
+      <input type="color" bind:value={textColor} />
+    </label>
+
+    <label>
+      Font
+      <select bind:value={fontFamily}>
+        {#each FONTS as f (f.value)}
+          <option value={f.value}>{f.label}</option>
+        {/each}
+      </select>
+    </label>
+
+    <label>
+      Text size · {fontSize}vh
+      <input type="range" min="2" max="14" step="0.5" bind:value={fontSize} />
+    </label>
+
+    <label>
+      Justification
+      <select bind:value={textAlign}>
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right">Right</option>
+      </select>
+    </label>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={boxFill} />
+      Opaque caption box
+    </label>
+
+    {#if boxFill}
+      <label>
+        Box color
+        <input type="color" bind:value={boxColor} />
+      </label>
+      <label>
+        Corner radius · {boxRadius}vh
+        <input type="range" min="0" max="6" step="0.5" bind:value={boxRadius} />
       </label>
     {/if}
 
@@ -558,6 +663,11 @@
     gap: 0.3rem;
     font-size: 0.85rem;
     color: #aaa;
+  }
+  label.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
   }
   select {
     background: #161616;

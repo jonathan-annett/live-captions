@@ -37,6 +37,11 @@
   // full frame and `position` governs vertical placement.
   const region = $derived(store.config.region);
 
+  // Optional opaque caption-box fill + rounded corners (3 colours: chroma key,
+  // box fill, text). When boxColor is unset the box is see-through.
+  const boxColor = $derived(store.config.boxColor);
+  const boxRadius = $derived(store.config.boxRadius ?? 0);
+
   // Live-room QR overlay — only meaningful when the output is keyed, so it's
   // gated to chroma mode (it breaks out of the caption box onto the green).
   const qr = $derived(store.config.qr);
@@ -56,6 +61,9 @@
   <div
     class="captions"
     class:boxed={region}
+    class:filled={boxColor}
+    style:background={boxColor ?? null}
+    style:border-radius={boxRadius ? `${boxRadius}vh` : null}
     style:left={region ? `${region.x}%` : null}
     style:top={region ? `${region.y}%` : null}
     style:width={region ? `${region.width}%` : null}
@@ -94,6 +102,11 @@
   .captions {
     width: 100%;
     text-align: var(--cap-align);
+  }
+  /* Opaque caption box: pad the text off the fill edges (em scales with size). */
+  .captions.filled {
+    padding: 0.3em 0.6em;
+    box-sizing: border-box;
   }
   /* Operator-placed box: absolute within the frame, content laid out vertically. */
   .captions.boxed {
