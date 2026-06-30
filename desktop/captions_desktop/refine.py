@@ -77,17 +77,25 @@ class RefinementPass:
 
     def _run(self) -> None:
         # Load this pass's own model (separate instance — the live engine's model
-        # isn't safe to call concurrently from two threads).
+        # isn't safe to call concurrently from two threads). The refine model can
+        # be large and download in the background AFTER live captions have started,
+        # so surface its progress (live flows the whole time; refinement joins when
+        # this finishes).
+        model = getattr(self.engine, "model_name", None) or "refine model"
+        print(f"  refine:   loading {model} (live captions continue meanwhile)…", flush=True)
         status = self.engine.load()
         if status.state == "error":
+            print(f"  refine:   FAILED to load {model}: {status.message}", flush=True)
             return
-        # Warm the model before processing real audio (avoid a cold first decode).
+        # Warm the model before processing real audio (this is where a big model
+        # actually downloads/compiles — so "live" prints once refinement is ready).
         try:
             import numpy as np
 
             self.engine.transcribe(np.zeros(16000, dtype="float32"), quality=True)
         except Exception:  # noqa: BLE001 - warmup is best-effort
             pass
+        print(f"  refine:   live — {model} now refining captions", flush=True)
         while self._running.is_set():
             item = None
             with self._lock:
