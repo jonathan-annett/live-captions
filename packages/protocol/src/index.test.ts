@@ -246,4 +246,15 @@ describe("client messages", () => {
       "requestHistory",
     );
   });
+
+  it("parses a setModel message (live + optional refine)", () => {
+    const a = parseClientMessage({ type: "setModel", model: "small.en" });
+    expect(a).toEqual({ type: "setModel", model: "small.en" });
+    const b = parseClientMessage({
+      type: "setModel",
+      model: "small.en",
+      refineModel: "large-v3",
+    });
+    expect(b.type === "setModel" && b.refineModel).toBe("large-v3");
+  });
 });

@@ -21,6 +21,7 @@ from .protocol import (
     RequestHistoryMessage,
     SetConfigMessage,
     SetDictionaryMessage,
+    SetModelMessage,
     dump_message,
     parse_client_message,
 )
@@ -162,3 +163,5 @@ def _handle_client(
             pass
     elif isinstance(msg, SetDictionaryMessage):
         controller.set_dictionary(msg.terms)
+    elif isinstance(msg, SetModelMessage):
+        controller.set_model(msg.model, msg.refine_model)

@@ -16,7 +16,8 @@ from pydantic.alias_generators import to_camel
 # v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
 # v3: CaptionSegment gains `joinNext` (operator line-merge control).
 # v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
-PROTOCOL_VERSION = 4
+# v5: `setModel` client message (desktop live/refine model hot-swap).
+PROTOCOL_VERSION = 5
 
 
 class _Model(BaseModel):
@@ -242,12 +243,21 @@ class RequestHistoryMessage(_Model):
     since: Optional[float] = None
 
 
+class SetModelMessage(_Model):
+    type: Literal["setModel"] = "setModel"
+    # live model name or HF repo (e.g. "small.en", "large-v3-turbo")
+    model: str
+    # refinement-pass model; None leaves it unchanged
+    refine_model: Optional[str] = None
+
+
 ClientMessage = Annotated[
     Union[
         SetConfigMessage,
         SetDictionaryMessage,
         ControlCommand,
         RequestHistoryMessage,
+        SetModelMessage,
     ],
     Field(discriminator="type"),
 ]

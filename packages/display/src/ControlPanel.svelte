@@ -66,6 +66,13 @@
 
   let dictionaryText = $state("");
 
+  // --- model picker (desktop hot-swap) --------------------------------------
+  // Live model stays fast; refine model can be large (two-tier). Free text is
+  // allowed (any HF repo) via the datalist.
+  const MODELS = ["tiny.en", "small.en", "medium.en", "large-v3", "large-v3-turbo"];
+  let liveModel = $state(lsGet("cg.model") ?? "small.en");
+  let refineModel = $state(lsGet("cg.refineModel") ?? "large-v3");
+
   let socket: ControlSocket | null = null;
   let synced = false; // adopted the server's config yet?
 
@@ -156,6 +163,15 @@
     socket?.send({ type: "setDictionary", terms });
   }
 
+  function applyModel(): void {
+    const model = liveModel.trim();
+    if (!model) return;
+    const refine = refineModel.trim();
+    socket?.send({ type: "setModel", model, refineModel: refine || undefined });
+    lsSet("cg.model", model);
+    lsSet("cg.refineModel", refine);
+  }
+
   const previewLines = $derived(joinSegments(store.segments).slice(-8));
 </script>
 
@@ -170,6 +186,29 @@
     <button class="go" onclick={() => command("start")}>Start</button>
     <button onclick={() => command("stop")}>Stop</button>
     <button onclick={() => command("clear")}>Clear</button>
+  </section>
+
+  <section class="model">
+    <h2>Model</h2>
+    <label>
+      Live
+      <input list="cg-models" bind:value={liveModel} placeholder="small.en" />
+    </label>
+    <label>
+      Refine
+      <input list="cg-models" bind:value={refineModel} placeholder="large-v3" />
+    </label>
+    <datalist id="cg-models">
+      {#each MODELS as m (m)}<option value={m}></option>{/each}
+    </datalist>
+    <div class="model-apply">
+      <button onclick={applyModel} disabled={engineState === "loading"}>
+        {engineState === "loading" ? "Loading…" : "Apply model"}
+      </button>
+      {#if store.status?.model}<span class="current">current: {store.status.model}</span>{/if}
+    </div>
+    <p class="hint">Bigger models are more accurate but slower. Two-tier: keep Live
+      fast (e.g. small.en) and set Refine large (e.g. large-v3). Any HF repo works.</p>
   </section>
 
   <section class="look">
@@ -335,14 +374,40 @@
     color: #5fe39b;
     border-color: #1d5c34;
   }
-  .look {
+  .look,
+  .model {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem 1rem;
     align-items: center;
   }
-  .look h2 {
+  .look h2,
+  .model h2 {
     grid-column: 1 / -1;
+  }
+  .model-apply {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .model .current {
+    font-size: 0.8rem;
+    color: #888;
+  }
+  .model .hint {
+    grid-column: 1 / -1;
+    font-size: 0.78rem;
+    color: #777;
+    margin: 0.2rem 0 0;
+  }
+  .model input {
+    background: #1a1a1a;
+    color: #e6e6e6;
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
   }
   label {
     display: flex;

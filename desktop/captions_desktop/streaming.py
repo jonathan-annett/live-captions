@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import uuid
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from .engines.base import ASREngine
 from .hub import CaptionHub
@@ -27,6 +27,7 @@ class Controller(Protocol):
     def start(self) -> None: ...
     def stop(self) -> None: ...
     def set_dictionary(self, terms: list[str]) -> None: ...
+    def set_model(self, model: str, refine_model: Optional[str] = None) -> None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,9 @@ class MockProducer:
 
     def set_dictionary(self, terms: list[str]) -> None:
         pass
+
+    def set_model(self, model: str, refine_model: Optional[str] = None) -> None:
+        pass  # the mock has no real ASR model to swap
 
     async def _run(self) -> None:
         self.hub.emit_status(
@@ -102,6 +106,10 @@ class LiveStreamer:
         block_ms: int = 32,
         device: Optional[int] = None,
         refiner: Optional[RefinementPass] = None,
+        make_engine: Optional[Callable[[str], ASREngine]] = None,
+        make_refine_engine: Optional[Callable[[str], ASREngine]] = None,
+        model: Optional[str] = None,
+        refine_model: Optional[str] = None,
     ) -> None:
         self.hub = hub
         self.engine = engine
@@ -110,6 +118,12 @@ class LiveStreamer:
         self.device = device
         self.refiner = refiner
         self.dictionary: list[str] = []
+        # Factories let set_model() rebuild the engine(s) for a live model swap
+        # (the streamer is otherwise handed a bare engine instance).
+        self._make_engine = make_engine
+        self._make_refine_engine = make_refine_engine
+        self.model = model
+        self.refine_model = refine_model
 
         self._vad = EnergyVAD(sample_rate)
         self._stream: Any = None
@@ -139,6 +153,28 @@ class LiveStreamer:
         self.dictionary = terms
         if self.refiner is not None:
             self.refiner.set_dictionary(terms)
+
+    def set_model(self, model: str, refine_model: Optional[str] = None) -> None:
+        """Hot-swap the live (and optionally refine) model. Rebuilds the engine(s)
+        via the factories and, if capturing, does a controlled stop→reload→start
+        (a brief 'loading' gap). The hub/history, WS clients and dictionary all
+        survive the swap. No-op if no engine factory was provided."""
+        if self._make_engine is None:
+            return
+        running = self._running.is_set()
+        if running:
+            self.stop()  # tears down capture + refiner; emits idle
+        self.model = model
+        self.engine = self._make_engine(model)
+        if (
+            self.refiner is not None
+            and refine_model
+            and self._make_refine_engine is not None
+        ):
+            self.refine_model = refine_model
+            self.refiner.set_engine(self._make_refine_engine(refine_model))
+        if running:
+            self.start()  # reloads + warms the new engine(s), restarts capture
 
     def start(self) -> None:
         import queue

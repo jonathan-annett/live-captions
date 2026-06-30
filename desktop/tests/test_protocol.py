@@ -8,11 +8,27 @@ from captions_desktop.protocol import (
     DEFAULT_DISPLAY_CONFIG,
     CaptionSegment,
     FinalMessage,
+    SetModelMessage,
     Word,
     dump_message,
     parse_client_message,
     parse_server_message,
 )
+
+
+def test_set_model_message_parses_camelcase():
+    msg = parse_client_message(
+        json.dumps({"type": "setModel", "model": "small.en", "refineModel": "large-v3"})
+    )
+    assert isinstance(msg, SetModelMessage)
+    assert msg.model == "small.en"
+    assert msg.refine_model == "large-v3"  # camelCase refineModel -> snake_case
+
+
+def test_set_model_message_refine_optional():
+    msg = parse_client_message(json.dumps({"type": "setModel", "model": "tiny.en"}))
+    assert isinstance(msg, SetModelMessage)
+    assert msg.refine_model is None
 
 
 def test_final_message_round_trips_camelcase():

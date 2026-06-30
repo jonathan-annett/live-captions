@@ -51,6 +51,12 @@ class RefinementPass:
     def set_dictionary(self, terms: list[str]) -> None:
         self._hotwords = ", ".join(terms) if terms else None
 
+    def set_engine(self, engine: ASREngine) -> None:
+        """Swap the refinement engine (for a model change). Call while stopped;
+        the running thread loads/warms it on next start. Dictionary + prompt tail
+        are preserved."""
+        self.engine = engine
+
     def submit(self, seg_id: str, samples: Any, start: float, end: float) -> None:
         """Queue a finalized utterance's audio for re-decode (called from the live thread)."""
         with self._lock:

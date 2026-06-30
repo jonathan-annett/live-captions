@@ -3,6 +3,7 @@ import numpy as np
 from captions_desktop.engines.base import TranscribeResult
 from captions_desktop.hub import CaptionHub
 from captions_desktop.protocol import Word
+from captions_desktop.refine import RefinementPass
 from captions_desktop.streaming import LiveStreamer
 
 
@@ -123,6 +124,42 @@ def test_partial_is_not_submitted_to_the_refiner():
     streamer._sample_count = 16000
     streamer._decode(final=False)
     assert refiner.submitted == []
+
+
+def test_set_model_swaps_engine_via_factory():
+    hub = CaptionHub()
+
+    def make_engine(model):
+        return _FakeEngine(TranscribeResult(text=model))
+
+    def make_refine_engine(model):
+        return _FakeEngine(TranscribeResult(text="r:" + model))
+
+    refiner = RefinementPass(hub, make_refine_engine("base.en"))
+    streamer = LiveStreamer(
+        hub,
+        make_engine("base.en"),
+        sample_rate=16000,
+        refiner=refiner,
+        make_engine=make_engine,
+        make_refine_engine=make_refine_engine,
+        model="base.en",
+        refine_model="base.en",
+    )
+    # Idle (not capturing): set_model just rebuilds the engines via the factories.
+    streamer.set_model("small.en", "large-v3")
+    assert streamer.model == "small.en"
+    assert streamer.engine._result.text == "small.en"  # new live engine
+    assert streamer.refine_model == "large-v3"
+    assert refiner.engine._result.text == "r:large-v3"  # new refine engine
+
+
+def test_set_model_noop_without_factory():
+    hub = CaptionHub()
+    engine = _FakeEngine(TranscribeResult(text="base"))
+    streamer = LiveStreamer(hub, engine, sample_rate=16000)  # no make_engine
+    streamer.set_model("small.en")
+    assert streamer.engine is engine  # unchanged
 
 
 def test_dictionary_passed_as_hotwords():

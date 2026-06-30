@@ -124,21 +124,37 @@ def _serve(args: argparse.Namespace) -> None:
     else:
         from .engines import create_engine
 
-        engine = create_engine(args.engine, model=args.model, device=args.device)
+        # Factories so the live model can be hot-swapped from the control panel
+        # (LiveStreamer.set_model rebuilds the engine via these).
+        def make_engine(model: str):
+            return create_engine(args.engine, model=model, device=args.device)
+
+        def make_refine_engine(model: str):
+            return create_engine(
+                args.refine_engine or args.engine, model=model, device=args.device
+            )
+
+        engine = make_engine(args.model)
         refiner = None
+        refine_model = None
         if args.refine:
             from .refine import RefinementPass
 
-            refine_engine = create_engine(
-                args.refine_engine or args.engine,
-                model=args.refine_model or args.model,
-                device=args.device,
-            )
-            refiner = RefinementPass(hub, refine_engine)
-        controller = LiveStreamer(hub, engine, device=args.mic, refiner=refiner)
+            refine_model = args.refine_model or args.model
+            refiner = RefinementPass(hub, make_refine_engine(refine_model))
+        controller = LiveStreamer(
+            hub,
+            engine,
+            device=args.mic,
+            refiner=refiner,
+            make_engine=make_engine,
+            make_refine_engine=make_refine_engine,
+            model=args.model,
+            refine_model=refine_model,
+        )
         engine_desc = f"{engine.__class__.__name__} ({args.model})"
         if refiner is not None:
-            engine_desc += f" + refine ({args.refine_model or args.model})"
+            engine_desc += f" + refine ({refine_model})"
 
     terms = _parse_dictionary(args.dictionary)
     if terms:

@@ -18,8 +18,9 @@ export * from "./export.js";
 /** Bumped on breaking changes to the message shapes below.
  *  v2: CaptionSegment gains `locked` (operator corrections) + populated `words`.
  *  v3: CaptionSegment gains `joinNext` (operator line-merge control).
- *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse). */
-export const PROTOCOL_VERSION = 4;
+ *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
+ *  v5: `setModel` client message (desktop live/refine model hot-swap). */
+export const PROTOCOL_VERSION = 5;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -411,12 +412,21 @@ export const RequestHistoryMessageSchema = z.object({
   type: z.literal("requestHistory"),
   since: z.number().optional(),
 });
+/** Hot-swap the desktop ASR model without restarting (live + optional refine). */
+export const SetModelMessageSchema = z.object({
+  type: z.literal("setModel"),
+  /** live model name or HF repo (e.g. "small.en", "large-v3-turbo") */
+  model: z.string(),
+  /** refinement-pass model; omit to leave it unchanged */
+  refineModel: z.string().optional(),
+});
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetConfigMessageSchema,
   SetDictionaryMessageSchema,
   ControlCommandSchema,
   RequestHistoryMessageSchema,
+  SetModelMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
