@@ -22,7 +22,18 @@
 | A6 | Added Zod-matching numeric bounds to the Python config models | `protocol.py` |
 | A7 | `start()` catch now publishes the error `status` to the room | `Control.svelte` |
 
-Section B (capability gaps) and the horizons in Section D remain open. The findings below are preserved as the original audit record.
+### Section B — capability gaps: progress
+
+**Desktop-only → ported to PWA:** Uppercase toggle, Clear button, model download retry/backoff. Left desktop-only **by design** (genuine browser/hardware limits): two-tier refinement, real word-probability confidence, runtime model hot-swap, and the larger/custom-repo model options.
+
+**PWA-only → ported to the desktop `/control` panel:** auto-height caption box, transcript export buttons (TXT/SRT/VTT), live-apply dictionary + usage help, state-based Start/Stop/Clear disabling. N/A on desktop by nature: open-display button (native window), in-browser download bar + per-model dtype (server-side only).
+
+**⚠️ OUTSTANDING — the one remaining audit item:**
+- **Desktop runtime audience-room controls** — Start/Stop room, live QR overlay toggle, downloadable QR PNG. On desktop these remain **CLI-launch-flags only** (`--start-room` / `--viewer-base` / `--caption-region`); the `/control` panel cannot manage a room at runtime. This needs new protocol messages + `server.py` room lifecycle, and it overlaps the planned **QR-overlay redesign**, so it is tracked to be built **together with that** (see `ROADMAP.md`). This is the only Section-B parity gap neither closed nor intentionally left by-design.
+
+**Also noted (not a bug):** both sides are effectively English-only — multilingual is a future feature, not drift.
+
+The protocol has since advanced to **v7** (added the `presence` audience device-count message); still lockstep TS ↔ Python. Section C (parity) holds. Section D horizons remain future work. The findings below are preserved as the original audit record.
 
 ---
 
