@@ -97,7 +97,7 @@ main multi-platform release. Upload the zip, creating the release if it doesn't
 exist yet:
 
 ```bash
-TAG=v0.1.0-intel   # match the version being released
+TAG=v0.2.0-beta-intel   # match the version being released (e.g. v0.2.0-beta → -intel)
 
 # If the release doesn't exist yet:
 gh release create "$TAG" \

@@ -56,3 +56,6 @@ jobs:
         with:
           files: artifacts/*.zip
           generate_release_notes: true
+          # A prerelease marker before `-intel` (e.g. v0.2.0-beta-intel) → prerelease.
+          # Plain `vX.Y.Z-intel` stays a full release (matching the main tag).
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') }}
