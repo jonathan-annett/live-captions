@@ -19,7 +19,7 @@ from .engines.base import ASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, EngineStatus, Word
 from .refine import RefinementPass
-from .sanitize import collapse_repeats, is_degenerate
+from .sanitize import is_degenerate, is_likely_speech
 from .vad import EnergyVAD
 
 
@@ -328,19 +328,27 @@ class LiveStreamer:
         if self._utter_n == 0:
             return
         samples = np.concatenate(self._utter).astype(np.float32)
+        # No-speech gate (mirror of the PWA's pre-decode peak-RMS/duration gate in
+        # packages/pwa/src/engine/sanitize.ts): silent/near-silent clips are exactly
+        # what make Whisper hallucinate phantom phrases, so never decode them. The
+        # energy VAD can false-trigger on brief loud non-speech; this is the backstop.
+        if not is_likely_speech(samples, self.sample_rate):
+            return
         seg_id = self._current_id
         start = self._utter_start / self.sample_rate
         end = self._sample_count / self.sample_rate
         hotwords = ", ".join(self.dictionary) if self.dictionary else None
         result = self.engine.transcribe(samples, hotwords=hotwords)
-        raw = result.text
-        # Drop non-speech junk; collapse repetition loops at the source (so even
-        # partials don't flash the loop, and history/room/export stay clean).
-        if not raw or is_degenerate(raw):
+        text = result.text
+        # Drop non-speech junk. Repetition loops are NOT collapsed here: the raw
+        # text is emitted and every render surface collapses at display time
+        # (join_segments / TS joinSegments), so keep_repeats can restore a genuine
+        # repeat and the operator correction panel still sees the loop to act on.
+        # Matches the PWA captioner (which also emits raw and collapses at render).
+        if not text or is_degenerate(text):
             return
-        text = collapse_repeats(raw)
-        # Engine word timestamps are clip-relative; offset to session time. Drop
-        # them if a loop was collapsed (the timings would no longer line up).
+        # Engine word timestamps are clip-relative; offset to session time. They
+        # line up with the raw text we emit.
         words = (
             [
                 Word(
@@ -351,7 +359,7 @@ class LiveStreamer:
                 )
                 for w in result.words
             ]
-            if result.words and text == raw
+            if result.words
             else None
         )
         seg = CaptionSegment(id=seg_id, text=text, start=start, end=end, words=words)

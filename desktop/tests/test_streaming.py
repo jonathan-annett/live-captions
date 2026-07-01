@@ -6,6 +6,12 @@ from captions_desktop.protocol import Word
 from captions_desktop.refine import RefinementPass
 from captions_desktop.streaming import LiveStreamer
 
+# Non-silent ~1s clip that clears the pre-decode speech gate (is_likely_speech):
+# its peak RMS (0.05) is well above MIN_PEAK_RMS. The FakeEngine ignores the
+# sample content, but _decode() now drops silence, so tests must feed plausible
+# speech to exercise the decode path.
+_SPEECH = np.full(16000, 0.05, dtype=np.float32)
+
 
 class _FakeEngine:
     """Returns fixed clip-relative words so we can check the streamer's offset."""
@@ -28,7 +34,7 @@ def _decode_one(result: TranscribeResult, *, utter_start: int, end_count: int):
     engine = _FakeEngine(result)
     streamer = LiveStreamer(hub, engine, sample_rate=16000)
     streamer._current_id = "u1"
-    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter = [_SPEECH]
     streamer._utter_n = 16000
     streamer._utter_start = utter_start
     streamer._sample_count = end_count
@@ -62,6 +68,18 @@ def test_decode_without_words_emits_plain_segment():
     )
     assert seg.text == "just text"
     assert seg.words is None
+
+
+def test_decode_emits_raw_text_leaving_collapse_to_render():
+    # Repetition loops are collapsed at render (join_segments / exports), NOT at
+    # the source, so keep_repeats can restore a genuine repeat and the operator
+    # correction panel sees the loop. The emitted segment keeps the raw text.
+    seg, _ = _decode_one(
+        TranscribeResult(text="warning warning warning warning"),
+        utter_start=0,
+        end_count=16000,
+    )
+    assert seg.text == "warning warning warning warning"
 
 
 def test_catch_up_drains_silence_backlog_and_keeps_the_clock():
@@ -101,7 +119,7 @@ def test_finalized_utterance_is_submitted_to_the_refiner():
     )
     streamer.set_dictionary(["Kubernetes"])  # forwarded to the refiner
     streamer._current_id = "u1"
-    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter = [_SPEECH]
     streamer._utter_n = 16000
     streamer._utter_start = 0
     streamer._sample_count = 16000
@@ -118,7 +136,7 @@ def test_partial_is_not_submitted_to_the_refiner():
         hub, _FakeEngine(TranscribeResult(text="hello")), sample_rate=16000, refiner=refiner
     )
     streamer._current_id = "u1"
-    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter = [_SPEECH]
     streamer._utter_n = 16000
     streamer._utter_start = 0
     streamer._sample_count = 16000
@@ -178,7 +196,7 @@ def test_dictionary_passed_as_hotwords():
     streamer = LiveStreamer(hub, engine, sample_rate=16000)
     streamer.set_dictionary(["Kubernetes", "Anthropic"])
     streamer._current_id = "u1"
-    streamer._utter = [np.zeros(16000, dtype=np.float32)]
+    streamer._utter = [_SPEECH]
     streamer._utter_n = 16000
     streamer._utter_start = 0
     streamer._sample_count = 16000

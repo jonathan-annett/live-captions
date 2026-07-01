@@ -4,9 +4,13 @@ same camelCase wire JSON that the TypeScript protocol produces.
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from captions_desktop.protocol import (
     DEFAULT_DISPLAY_CONFIG,
     CaptionSegment,
+    DisplayConfig,
     EditSegmentMessage,
     FinalMessage,
     SetModelMessage,
@@ -15,6 +19,29 @@ from captions_desktop.protocol import (
     parse_client_message,
     parse_server_message,
 )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"fontWeight": 5000},  # > 900
+        {"fontWeight": 50},  # < 100
+        {"fontSize": 0},  # not positive
+        {"maxLines": 0},  # not positive
+        {"region": {"x": 0, "y": 0, "width": 200, "height": 10}},  # > 100
+    ],
+)
+def test_display_config_rejects_out_of_range(bad):
+    # Numeric bounds mirror the Zod constraints so PWA and desktop reject the same
+    # patches (see packages/protocol/src/index.ts DisplayConfigSchema).
+    merged = {**DEFAULT_DISPLAY_CONFIG.model_dump(by_alias=True), **bad}
+    with pytest.raises(ValidationError):
+        DisplayConfig.model_validate(merged)
+
+
+def test_display_config_accepts_in_range():
+    merged = {**DEFAULT_DISPLAY_CONFIG.model_dump(by_alias=True), "fontWeight": 900}
+    assert DisplayConfig.model_validate(merged).font_weight == 900
 
 
 def test_set_model_message_parses_camelcase():

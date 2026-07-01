@@ -100,38 +100,41 @@ Background = Annotated[
 class CaptionRegion(_Model):
     """Operator-placed caption box as a percentage of the output frame (0..100)."""
 
-    x: float
-    y: float
-    width: float
-    height: float
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+    width: float = Field(ge=0, le=100)
+    height: float = Field(ge=0, le=100)
 
 
 class QrOverlay(_Model):
     """Live-room QR overlay; the display shows it only in chroma-key mode."""
 
     url: str
-    x: float
-    y: float
-    size: float  # square edge as % of the smaller frame dimension
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+    size: float = Field(ge=0, le=100)  # square edge as % of the smaller frame dimension
 
 
 class DisplayConfig(_Model):
+    # Numeric bounds mirror the Zod constraints in packages/protocol/src/index.ts
+    # (DisplayConfigSchema) so an out-of-range patch is rejected the same on both
+    # sides (see hub.set_config, which re-validates through this model).
     font_family: str
-    font_size: float  # viewport-height units (vh)
-    font_weight: int  # CSS font-weight (100–900)
+    font_size: float = Field(gt=0)  # viewport-height units (vh)
+    font_weight: int = Field(ge=100, le=900)  # CSS font-weight
     orientation: Literal["horizontal", "vertical"]  # vertical uses CSS writing-mode
     color: str
     background: Background
     position: Literal["top", "center", "bottom"]
     text_align: Literal["left", "center", "right"]
-    max_lines: int
+    max_lines: int = Field(gt=0)
     mode: Literal["rolling", "scroll"]
     show_partial: bool
     uppercase: bool
     # Opaque caption-box fill behind the text; None/transparent = see-through.
     box_color: Optional[str] = None
     # Caption-box corner radius in vh (rounded corners); None/0 = square.
-    box_radius: Optional[float] = None
+    box_radius: Optional[float] = Field(default=None, ge=0)
     # Operator-placed caption box (% of frame); None = full-frame + position.
     region: Optional[CaptionRegion] = None
     # Live-room QR overlay; the display shows it only in chroma-key mode.

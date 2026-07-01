@@ -5,22 +5,26 @@ from __future__ import annotations
 from typing import Sequence
 
 from .protocol import CaptionSegment
+from .render import join_segments
 
 
 def to_plain_text(segments: Sequence[CaptionSegment]) -> str:
-    return "\n".join(s.text for s in segments) + "\n"
+    return "\n".join(line.text for line in join_segments(segments)) + "\n"
 
 
 def to_srt(segments: Sequence[CaptionSegment]) -> str:
     blocks = [
-        f"{i + 1}\n{_fmt(s.start, ',')} --> {_fmt(s.end, ',')}\n{s.text}\n"
-        for i, s in enumerate(segments)
+        f"{i + 1}\n{_fmt(line.start, ',')} --> {_fmt(line.end, ',')}\n{line.text}\n"
+        for i, line in enumerate(join_segments(segments))
     ]
     return "\n".join(blocks)
 
 
 def to_vtt(segments: Sequence[CaptionSegment]) -> str:
-    cues = [f"{_fmt(s.start, '.')} --> {_fmt(s.end, '.')}\n{s.text}\n" for s in segments]
+    cues = [
+        f"{_fmt(line.start, '.')} --> {_fmt(line.end, '.')}\n{line.text}\n"
+        for line in join_segments(segments)
+    ]
     return "WEBVTT\n\n" + "\n".join(cues)
 
 

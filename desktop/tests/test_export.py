@@ -35,6 +35,34 @@ def test_export_transcript_dispatch():
     assert export_transcript(SEGMENTS, "txt")[1] == "text/plain"
 
 
+def test_join_next_merges_segments_into_one_line():
+    # First segment's join_next merges the next onto it — one line/cue, not two.
+    segs = [
+        CaptionSegment(id="a", text="hello", start=0.0, end=1.0, join_next="period"),
+        CaptionSegment(id="b", text="world", start=1.0, end=2.0),
+    ]
+    assert to_plain_text(segs) == "hello. world\n"
+    srt = to_srt(segs)
+    assert "1\n00:00:00,000 --> 00:00:02,000\nhello. world" in srt
+    assert "2\n" not in srt  # merged, so no second block
+
+
+def test_join_next_plain_does_not_double_punctuate():
+    # prev already ends hard, so a merge must not add another mark.
+    segs = [
+        CaptionSegment(id="a", text="Done.", start=0.0, end=1.0, join_next="comma"),
+        CaptionSegment(id="b", text="next", start=1.0, end=2.0),
+    ]
+    assert to_plain_text(segs) == "Done. next\n"
+
+
+def test_export_collapses_repeats_unless_kept():
+    loop = "warning warning warning warning"
+    assert to_plain_text([CaptionSegment(id="a", text=loop, start=0.0, end=1.0)]) == "warning\n"
+    kept = [CaptionSegment(id="a", text=loop, start=0.0, end=1.0, keep_repeats=True)]
+    assert to_plain_text(kept) == loop + "\n"
+
+
 def test_parse_dictionary_comma_and_file(tmp_path):
     assert _parse_dictionary("Acme, Inc., Widget") == ["Acme", "Inc.", "Widget"]
     assert _parse_dictionary(None) == []

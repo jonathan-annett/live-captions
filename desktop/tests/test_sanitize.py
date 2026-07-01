@@ -1,4 +1,25 @@
-from captions_desktop.sanitize import collapse_repeats, is_degenerate
+import numpy as np
+
+from captions_desktop.sanitize import (
+    collapse_repeats,
+    is_degenerate,
+    is_likely_speech,
+    peak_rms,
+)
+
+
+def test_speech_gate_rejects_silence_and_too_short():
+    sr = 16000
+    assert not is_likely_speech(np.zeros(sr, dtype=np.float32), sr)  # 1s of silence
+    loud_but_brief = np.full(int(sr * 0.1), 0.2, dtype=np.float32)  # 100ms < 250ms
+    assert not is_likely_speech(loud_but_brief, sr)
+
+
+def test_speech_gate_passes_loud_enough_clip():
+    sr = 16000
+    clip = np.full(sr, 0.05, dtype=np.float32)  # 1s, peak 0.05 > MIN_PEAK_RMS
+    assert is_likely_speech(clip, sr)
+    assert peak_rms(np.zeros(sr, dtype=np.float32), sr) == 0.0
 
 
 def test_is_degenerate_flags_junk():
