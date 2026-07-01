@@ -710,6 +710,12 @@
     captioner?.setDictionary(dictionaryTerms());
   });
 
+  // Mic changed: `bind:value` already persisted the choice; hot-swap the input
+  // live if we're capturing (the id from the event is authoritative here).
+  function onMicChange(id: string): void {
+    if (running) void captioner?.setDevice(id);
+  }
+
   function download(format: ExportFormat) {
     const { body, mime, filename } = exportTranscript(store.finals, format);
     const url = URL.createObjectURL(new Blob([body], { type: mime }));
@@ -913,7 +919,7 @@
   <section class="controls">
     <label>
       Microphone
-      <select bind:value={deviceId} disabled={running}>
+      <select bind:value={deviceId} onchange={(e) => onMicChange(e.currentTarget.value)}>
         <option value="">Default</option>
         {#each mics as mic (mic.deviceId)}
           <option value={mic.deviceId}>

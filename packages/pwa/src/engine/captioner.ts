@@ -56,6 +56,7 @@ export class Captioner {
   private channel: BroadcastChannel | null = null;
   private audioCtx: AudioContext | null = null;
   private stream: MediaStream | null = null;
+  private source: MediaStreamAudioSourceNode | null = null;
   private node: AudioWorkletNode | null = null;
 
   private vad!: EnergyVAD;
@@ -129,10 +130,10 @@ export class Captioner {
     this.maxUtter = Math.round(this.rate * 14); // force-commit cap
 
     await this.audioCtx.audioWorklet.addModule(workletUrl);
-    const source = this.audioCtx.createMediaStreamSource(this.stream);
+    this.source = this.audioCtx.createMediaStreamSource(this.stream);
     this.node = new AudioWorkletNode(this.audioCtx, "pcm-worklet");
     this.node.port.onmessage = (e) => this.onFrame(e.data as Float32Array);
-    source.connect(this.node);
+    this.source.connect(this.node);
     // Connect to destination so the worklet is pulled; it outputs silence.
     this.node.connect(this.audioCtx.destination);
     // A context created outside a user gesture starts suspended; resume so the
@@ -154,14 +155,43 @@ export class Captioner {
     return this.audioCtx.state === "running";
   }
 
+  /** Switch the mic input live, keeping the model/worker/AudioContext intact —
+   *  only the input MediaStream + its source node are swapped. `deviceId` is the
+   *  value from enumerateDevices ("" = system default). No-op when not capturing;
+   *  the new device is remembered and used on the next start(). */
+  async setDevice(deviceId: string): Promise<void> {
+    (this.opts as { deviceId?: string }).deviceId = deviceId || undefined;
+    if (!this.audioCtx || !this.node) return; // not running → applies on next start
+    if (this.inUtterance) this.finishUtterance();
+    const next = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    this.source?.disconnect();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = next;
+    this.source = this.audioCtx.createMediaStreamSource(next);
+    this.source.connect(this.node);
+    // Drop now-stale preroll so the next utterance starts clean on the new input.
+    this.preroll = [];
+    this.prerollSamples = 0;
+  }
+
   stop(): void {
     if (this.inUtterance) this.finishUtterance();
+    this.source?.disconnect();
     this.node?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
     void this.audioCtx?.close();
     this.worker?.terminate();
     this.channel?.close();
     this.node = null;
+    this.source = null;
     this.stream = null;
     this.audioCtx = null;
     this.worker = null;

@@ -16,19 +16,22 @@ from fastapi.staticfiles import StaticFiles
 from .export import export_transcript
 from .hub import CaptionHub
 from .protocol import (
+    AudioDevicesMessage,
     ControlCommand,
     EditSegmentMessage,
     HistoryMessage,
+    RequestDevicesMessage,
     RequestHistoryMessage,
     RoomControlMessage,
     SetConfigMessage,
     SetDictionaryMessage,
+    SetInputDeviceMessage,
     SetModelMessage,
     dump_message,
     parse_client_message,
 )
 from .rooms import RoomManager
-from .streaming import Controller
+from .streaming import Controller, list_input_devices
 
 
 def build_app(
@@ -188,3 +191,23 @@ def _handle_client(
         # stays sync for the other, synchronous branches).
         if manager is not None:
             asyncio.create_task(manager.handle(msg.action, msg.qr))
+    elif isinstance(msg, RequestDevicesMessage):
+        # Reply only to the requesting client with the mic list + current selection.
+        _reply_devices(controller, q)
+    elif isinstance(msg, SetInputDeviceMessage):
+        # Switch the capture device live, then echo the updated selection back.
+        controller.set_device(msg.device)
+        _reply_devices(controller, q)
+
+
+def _reply_devices(controller: Controller, q: "asyncio.Queue") -> None:
+    """Send the audio input-device list + current selection to one client."""
+    try:
+        q.put_nowait(
+            AudioDevicesMessage(
+                devices=list_input_devices(),
+                current=controller.get_input_device(),
+            )
+        )
+    except asyncio.QueueFull:
+        pass

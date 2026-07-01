@@ -28,6 +28,28 @@ class Controller(Protocol):
     def stop(self) -> None: ...
     def set_dictionary(self, terms: list[str]) -> None: ...
     def set_model(self, model: str, refine_model: Optional[str] = None) -> None: ...
+    def set_device(self, device: Optional[int]) -> None: ...
+    def get_input_device(self) -> Optional[int]: ...
+
+
+def list_input_devices() -> list[dict]:
+    """Enumerate available audio INPUT devices as ``{index, name, channels}``.
+    Best-effort: returns ``[]`` if PortAudio/sounddevice is unavailable (e.g. a
+    headless CI box) so the caller never crashes on enumeration."""
+    try:
+        import sounddevice as sd
+
+        devices = sd.query_devices()
+    except Exception:  # noqa: BLE001 - no audio backend / no devices
+        return []
+    out: list[dict] = []
+    for i, d in enumerate(devices):
+        channels = int(d.get("max_input_channels", 0))
+        if channels > 0:
+            out.append(
+                {"index": i, "name": str(d.get("name", f"device {i}")), "channels": channels}
+            )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +85,12 @@ class MockProducer:
 
     def set_model(self, model: str, refine_model: Optional[str] = None) -> None:
         pass  # the mock has no real ASR model to swap
+
+    def set_device(self, device: Optional[int]) -> None:
+        pass  # the mock captures no audio
+
+    def get_input_device(self) -> Optional[int]:
+        return None
 
     async def _run(self) -> None:
         self.hub.emit_status(
@@ -179,6 +207,23 @@ class LiveStreamer:
             self.refine_model = want
         if running:
             self.start()  # reloads + warms the new engine(s), restarts capture
+
+    def set_device(self, device: Optional[int]) -> None:
+        """Switch the audio input device (index; None = system default). If
+        currently listening, the capture stream reopens on the new device without
+        reloading the model — hub/history/dictionary all survive. Applied on the
+        next start() otherwise."""
+        if device == self.device:
+            return
+        running = self._running.is_set()
+        if running:
+            self.stop()  # closes the current mic stream; emits idle
+        self.device = device
+        if running:
+            self.start()  # reopens capture on the new device (model already warm-loads)
+
+    def get_input_device(self) -> Optional[int]:
+        return self.device
 
     def start(self) -> None:
         import queue

@@ -307,4 +307,25 @@ describe("client messages", () => {
     const parsed = parseClientMessage({ type: "roomControl", action: "stop" });
     expect(parsed.type === "roomControl" && parsed.action).toBe("stop");
   });
+
+  it("parses requestDevices and setInputDevice (incl. null = default)", () => {
+    expect(parseClientMessage({ type: "requestDevices" }).type).toBe("requestDevices");
+    const a = parseClientMessage({ type: "setInputDevice", device: 4 });
+    expect(a.type === "setInputDevice" && a.device).toBe(4);
+    const b = parseClientMessage({ type: "setInputDevice", device: null });
+    expect(b.type === "setInputDevice" && b.device).toBeNull();
+  });
+
+  it("parses an audioDevices server message, tolerating an omitted current", () => {
+    const a = parseServerMessage({
+      type: "audioDevices",
+      devices: [{ index: 2, name: "BlackHole 2ch", channels: 2 }],
+      current: 2,
+    });
+    expect(a.type === "audioDevices" && a.devices[0].name).toBe("BlackHole 2ch");
+    expect(a.type === "audioDevices" && a.current).toBe(2);
+    // Python drops None fields on the wire → current may be absent
+    const b = parseServerMessage({ type: "audioDevices", devices: [] });
+    expect(b.type === "audioDevices" && (b.current ?? null)).toBeNull();
+  });
 });

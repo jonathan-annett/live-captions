@@ -26,8 +26,10 @@ export * from "./suggest.js";
  *  v7: `presence` server message (audience-room connected-device count).
  *  v8: QrOverlay gains `enabled`/`label`/`exclusive` (standalone operator-toggled
  *      overlay, any background mode); `roomControl` client message (desktop
- *      runtime room start/stop/restart). */
-export const PROTOCOL_VERSION = 8;
+ *      runtime room start/stop/restart).
+ *  v9: audio input-device picker — `requestDevices`/`setInputDevice` client
+ *      messages + `audioDevices` server message (desktop mic selection). */
+export const PROTOCOL_VERSION = 9;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -419,6 +421,22 @@ export const PresenceMessageSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
+/** An available audio input device (desktop mic picker). */
+export const AudioDeviceSchema = z.object({
+  index: z.number().int(),
+  name: z.string(),
+  channels: z.number().int().nonnegative(),
+});
+export type AudioDevice = z.infer<typeof AudioDeviceSchema>;
+/** The desktop's audio input devices + the currently-selected one (null = system
+ *  default). Sent in reply to `requestDevices` and after a `setInputDevice`. */
+export const AudioDevicesMessageSchema = z.object({
+  type: z.literal("audioDevices"),
+  devices: z.array(AudioDeviceSchema),
+  // null / omitted = system default (Python drops None fields on the wire)
+  current: z.number().int().nullable().optional(),
+});
+
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   PartialMessageSchema,
   FinalMessageSchema,
@@ -427,6 +445,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   StatusMessageSchema,
   HistoryMessageSchema,
   PresenceMessageSchema,
+  AudioDevicesMessageSchema,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
@@ -477,6 +496,17 @@ export const RoomControlMessageSchema = z.object({
   qr: QrOverlaySchema.omit({ url: true }).partial().optional(),
 });
 
+/** Ask the desktop server to enumerate its audio input devices (reply: `audioDevices`). */
+export const RequestDevicesMessageSchema = z.object({
+  type: z.literal("requestDevices"),
+});
+/** Select the desktop audio input device by index; null = system default. Applied
+ *  live (the capture stream reopens on the new device if currently listening). */
+export const SetInputDeviceMessageSchema = z.object({
+  type: z.literal("setInputDevice"),
+  device: z.number().int().nullable(),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetConfigMessageSchema,
   SetDictionaryMessageSchema,
@@ -485,6 +515,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetModelMessageSchema,
   EditSegmentMessageSchema,
   RoomControlMessageSchema,
+  RequestDevicesMessageSchema,
+  SetInputDeviceMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 

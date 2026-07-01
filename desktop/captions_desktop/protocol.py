@@ -22,7 +22,9 @@ from pydantic.alias_generators import to_camel
 # v8: QrOverlay gains `enabled`/`label`/`exclusive` (standalone operator-toggled
 #     overlay, any background mode); `roomControl` client message (runtime room
 #     start/stop/restart).
-PROTOCOL_VERSION = 8
+# v9: audio input-device picker — `requestDevices`/`setInputDevice` client
+#     messages + `audioDevices` server message (desktop mic selection).
+PROTOCOL_VERSION = 9
 
 
 class _Model(BaseModel):
@@ -224,6 +226,23 @@ class PresenceMessage(_Model):
     count: int = Field(ge=0)
 
 
+class AudioDevice(_Model):
+    """An available audio input device (desktop mic picker)."""
+
+    index: int
+    name: str
+    channels: int = Field(ge=0)
+
+
+class AudioDevicesMessage(_Model):
+    """The desktop's audio input devices + the selected one (None = system default).
+    Sent in reply to `requestDevices` and after a `setInputDevice`."""
+
+    type: Literal["audioDevices"] = "audioDevices"
+    devices: list[AudioDevice]
+    current: Optional[int] = None
+
+
 ServerMessage = Annotated[
     Union[
         PartialMessage,
@@ -233,6 +252,7 @@ ServerMessage = Annotated[
         StatusMessage,
         HistoryMessage,
         PresenceMessage,
+        AudioDevicesMessage,
     ],
     Field(discriminator="type"),
 ]
@@ -301,6 +321,17 @@ class RoomControlMessage(_Model):
     qr: Optional[QrOverlayOverrides] = None
 
 
+class RequestDevicesMessage(_Model):
+    # Ask the server to enumerate its audio input devices (reply: audioDevices).
+    type: Literal["requestDevices"] = "requestDevices"
+
+
+class SetInputDeviceMessage(_Model):
+    # Select the audio input device by index; None = system default. Applied live.
+    type: Literal["setInputDevice"] = "setInputDevice"
+    device: Optional[int] = None
+
+
 ClientMessage = Annotated[
     Union[
         SetConfigMessage,
@@ -310,6 +341,8 @@ ClientMessage = Annotated[
         SetModelMessage,
         EditSegmentMessage,
         RoomControlMessage,
+        RequestDevicesMessage,
+        SetInputDeviceMessage,
     ],
     Field(discriminator="type"),
 ]

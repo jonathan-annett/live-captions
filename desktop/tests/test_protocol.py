@@ -262,6 +262,30 @@ def test_parse_room_control_stop_bare():
     assert msg.qr is None
 
 
+def test_parse_request_devices_and_set_input_device():
+    a = parse_client_message(json.dumps({"type": "requestDevices"}))
+    assert a.type == "requestDevices"
+    b = parse_client_message(json.dumps({"type": "setInputDevice", "device": 4}))
+    assert b.device == 4
+    c = parse_client_message(json.dumps({"type": "setInputDevice", "device": None}))
+    assert c.device is None  # system default
+
+
+def test_audio_devices_message_round_trips():
+    from captions_desktop.protocol import AudioDevice, AudioDevicesMessage
+
+    msg = AudioDevicesMessage(
+        devices=[AudioDevice(index=2, name="BlackHole 2ch", channels=2)], current=2
+    )
+    out = json.loads(dump_message(msg))
+    assert out["type"] == "audioDevices"
+    assert out["devices"][0]["name"] == "BlackHole 2ch"
+    assert out["current"] == 2
+    # round-trip back through the server-message parser
+    back = parse_server_message(dump_message(msg))
+    assert back.devices[0].channels == 2 and back.current == 2
+
+
 def test_parse_client_history_request():
     msg = parse_client_message(json.dumps({"type": "requestHistory", "since": 30}))
     assert msg.since == 30

@@ -30,6 +30,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve.add_argument("--device", default="auto", help="auto|cpu|cuda (faster-whisper)")
     serve.add_argument("--mic", type=int, default=None, help="input device index")
     serve.add_argument(
+        "--list-devices",
+        action="store_true",
+        help="print available audio input devices (index + name) and exit",
+    )
+    serve.add_argument(
         "--refine",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -129,6 +134,16 @@ def _serve(args: argparse.Namespace) -> None:
             print(
                 f"  [{s['index']}] {s['width']}x{s['height']} @ ({s['x']},{s['y']})"
             )
+        return
+
+    if args.list_devices:
+        from .streaming import list_input_devices
+
+        devices = list_input_devices()
+        if not devices:
+            print("No audio input devices (sounddevice/PortAudio unavailable).")
+        for d in devices:
+            print(f"  [{d['index']}] {d['name']} ({d['channels']} ch)")
         return
 
     hub = CaptionHub()

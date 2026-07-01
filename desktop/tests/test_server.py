@@ -50,6 +50,37 @@ def test_room_control_message_dispatches_to_manager():
     assert mgr.calls[0][1] is not None and mgr.calls[0][1].x == 10
 
 
+def test_request_devices_replies_to_caller():
+    hub = CaptionHub()
+    hub.submit = hub._dispatch
+    q = asyncio.Queue()
+    # MockProducer.get_input_device() -> None; list_input_devices is best-effort ([]).
+    _handle_client(hub, MockProducer(hub), json.dumps({"type": "requestDevices"}), q)
+    reply = q.get_nowait()
+    assert reply.type == "audioDevices"
+    assert isinstance(reply.devices, list)
+    assert reply.current is None
+
+
+def test_set_input_device_switches_and_echoes_selection():
+    hub = CaptionHub()
+    hub.submit = hub._dispatch
+
+    class FakeController(MockProducer):
+        def set_device(self, device):
+            self._device = device
+
+        def get_input_device(self):
+            return getattr(self, "_device", None)
+
+    ctrl = FakeController(hub)
+    q = asyncio.Queue()
+    _handle_client(hub, ctrl, json.dumps({"type": "setInputDevice", "device": 3}), q)
+    assert ctrl.get_input_device() == 3
+    reply = q.get_nowait()
+    assert reply.type == "audioDevices" and reply.current == 3
+
+
 def test_history_endpoint_empty_without_autostart():
     hub = CaptionHub()
     app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)

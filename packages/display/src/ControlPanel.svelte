@@ -3,6 +3,7 @@
   import {
     DEFAULT_DISPLAY_CONFIG,
     exportTranscript,
+    type AudioDevice,
     type Background,
     type CaptionSegment,
     type DisplayConfig,
@@ -185,11 +186,19 @@
     socket = new ControlSocket(
       wsUrl,
       (msg) => {
+        // Audio input-device list (reply to requestDevices / setInputDevice) —
+        // not a caption message, so intercept before the store.
+        if (msg.type === "audioDevices") {
+          devices = msg.devices;
+          currentDevice = msg.current ?? null;
+          return;
+        }
         store.apply(msg);
         // Adopt the server's look once, from its first config snapshot.
         if (msg.type === "config" && !synced) {
           synced = true;
           adoptConfig(msg.config);
+          socket?.send({ type: "requestDevices" }); // populate the mic picker
         }
       },
       (s) => (connection = s),
@@ -209,6 +218,16 @@
 
   function command(command: "start" | "stop" | "clear"): void {
     socket?.send({ type: "command", command });
+  }
+
+  // Audio input devices (desktop mic picker). Populated from the server's
+  // `audioDevices` reply; changing the select switches the capture device live.
+  let devices = $state<AudioDevice[]>([]);
+  let currentDevice = $state<number | null>(null);
+  function selectDevice(value: string): void {
+    const device = value === "" ? null : Number(value);
+    currentDevice = device;
+    socket?.send({ type: "setInputDevice", device });
   }
 
   function pushDictionary(): void {
@@ -338,6 +357,18 @@
 
   <section class="model">
     <h2>Model</h2>
+    <label>
+      Microphone
+      <select
+        value={currentDevice === null ? "" : String(currentDevice)}
+        onchange={(e) => selectDevice(e.currentTarget.value)}
+      >
+        <option value="">System default</option>
+        {#each devices as d (d.index)}
+          <option value={String(d.index)}>{d.name}</option>
+        {/each}
+      </select>
+    </label>
     <label>
       Live
       <select
