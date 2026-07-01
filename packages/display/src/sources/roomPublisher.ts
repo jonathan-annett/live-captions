@@ -13,8 +13,20 @@ const MAX_QUEUE = 500;
  * while the socket is down are buffered (oldest dropped past {@link MAX_QUEUE})
  * and flushed on (re)connect, so a brief blip doesn't lose finals.
  *
+ * On every (re)connect, an optional {@link RoomPublisherOptions.seed} provider is
+ * sent first — the current config + full transcript history — so a room started
+ * mid-session, or one whose Durable Object log was lost to hibernation, is fully
+ * re-seeded (the desktop hub does the same via `snapshot_for_new_client`). The DO
+ * ingests a `history` message lock-aware without rebroadcasting it.
+ *
  * Used by both clients (PWA captioner tee, desktop hub) — see DEPLOY.md.
  */
+export interface RoomPublisherOptions {
+  onState?: (state: ConnectionState) => void;
+  /** Snapshot to (re)seed the room with on each connect (config + history). */
+  seed?: () => ServerMessage[];
+}
+
 export class RoomPublisher {
   private ws: WebSocket | null = null;
   private closed = false;
@@ -22,11 +34,21 @@ export class RoomPublisher {
   private readonly maxRetryMs = 5000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private queue: string[] = [];
+  private readonly onState?: (state: ConnectionState) => void;
+  private readonly seed?: () => ServerMessage[];
 
   constructor(
     private readonly publishUrl: string,
-    private readonly onState?: (state: ConnectionState) => void,
-  ) {}
+    onStateOrOptions?: ((state: ConnectionState) => void) | RoomPublisherOptions,
+  ) {
+    // Back-compat: the second arg used to be a bare onState callback.
+    if (typeof onStateOrOptions === "function") {
+      this.onState = onStateOrOptions;
+    } else if (onStateOrOptions) {
+      this.onState = onStateOrOptions.onState;
+      this.seed = onStateOrOptions.seed;
+    }
+  }
 
   /** Open the publish socket (idempotent). */
   start(): void {
@@ -52,10 +74,17 @@ export class RoomPublisher {
     this.ws.onopen = () => {
       this.retryMs = 500;
       this.setState("open");
+      this.reseed();
       this.flush();
     };
     this.ws.onclose = () => this.scheduleReconnect();
     this.ws.onerror = () => this.ws?.close();
+  }
+
+  /** Re-seed the room with the current snapshot (config + history) on connect. */
+  private reseed(): void {
+    if (!this.seed) return;
+    for (const msg of this.seed()) this.ws?.send(JSON.stringify(msg));
   }
 
   private flush(): void {

@@ -7,7 +7,7 @@
     type ConnectionState,
   } from "./sources/index.js";
   import { connectionView, isNearBottom } from "./viewerView.js";
-  import { joinSegments } from "@captions/protocol";
+  import { collapseRepeats, joinSegments } from "@captions/protocol";
 
   // Audience-facing mobile viewer: an uncapped, scroll-back transcript bound to
   // a ViewerStore. The source can be injected (e.g. the /room page builds a
@@ -76,7 +76,11 @@
       <p class="line">{line.text}</p>
     {/each}
     {#if store.partial && store.config.showPartial}
-      <p class="line partial">{store.partial.text}</p>
+      <p class="line partial">
+        {store.partial.keepRepeats
+          ? store.partial.text
+          : collapseRepeats(store.partial.text)}
+      </p>
     {/if}
   </main>
 

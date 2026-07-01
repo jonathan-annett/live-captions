@@ -221,11 +221,28 @@
     );
   });
 
-  // Push to the on-air display whenever the config changes (write-only side
-  // effect — no reactive state is written here, so no update loop).
+  // Push to the on-air display AND the audience room whenever the config changes
+  // (write-only side effect — no reactive state is written here, so no update
+  // loop). Teeing to the room keeps the DO's latestConfig current so audience
+  // late-joiners get the operator's look, not defaults.
   $effect(() => {
-    configChannel.postMessage({ type: "config", config: $state.snapshot(displayConfig) });
+    const msg: ServerMessage = {
+      type: "config",
+      config: $state.snapshot(displayConfig),
+    };
+    configChannel.postMessage(msg);
+    publisher?.publish(msg);
   });
+
+  // Snapshot the room should be (re)seeded with on each (re)connect: current
+  // config + the full transcript so far. Covers starting a room mid-session and
+  // restoring the DO log after hibernation (the DO ingests history lock-aware).
+  function roomSnapshot(): ServerMessage[] {
+    return [
+      { type: "config", config: $state.snapshot(displayConfig) },
+      { type: "history", segments: $state.snapshot(store.finals) },
+    ];
+  }
 
   // A display that connects later asks for the current config (BroadcastChannel
   // doesn't replay); reply so it doesn't stay on defaults (e.g. miss chroma).
@@ -254,7 +271,10 @@
       const joinUrl = joinUrlFor(r.id);
       room = { id: r.id, joinUrl };
       publisher?.stop();
-      publisher = new RoomPublisher(r.publishUrl, (s) => (publishState = s));
+      publisher = new RoomPublisher(r.publishUrl, {
+        onState: (s) => (publishState = s),
+        seed: roomSnapshot,
+      });
       publisher.start();
       // Advertise the join QR on the display (shown only in chroma mode);
       // the $effect picks this up and pushes the new config.
@@ -397,7 +417,10 @@
     // Legacy/power-user path: a publish target given in the URL starts relaying
     // immediately (independent of the "Start room" button).
     if (publishUrl) {
-      publisher = new RoomPublisher(publishUrl, (s) => (publishState = s));
+      publisher = new RoomPublisher(publishUrl, {
+        onState: (s) => (publishState = s),
+        seed: roomSnapshot,
+      });
       publisher.start();
     }
     try {
@@ -432,10 +455,12 @@
       );
     } catch (err) {
       running = false;
-      store.apply({
+      const msg: ServerMessage = {
         type: "status",
         status: { state: "error", message: String(err) },
-      });
+      };
+      store.apply(msg);
+      publisher?.publish(msg);
     }
   }
 

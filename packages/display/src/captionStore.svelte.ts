@@ -1,5 +1,6 @@
 import {
   canReplaceSegment,
+  collapseRepeats,
   DEFAULT_DISPLAY_CONFIG,
   joinSegments,
   type CaptionSegment,
@@ -87,7 +88,12 @@ export class CaptionStore {
     // The partial (un-finalized "bleeding-edge" hypothesis) is hidden when the
     // operator turns showPartial off — a bit more latency, fewer visible errors.
     if (this.partial && this.config.showPartial && this.partial.text.trim()) {
-      out.push({ key: "partial", text: this.partial.text, partial: true });
+      // Collapse repeat loops in the live tail too, so a hallucinated loop never
+      // flashes on-air before the final lands (finals collapse via joinSegments).
+      const text = this.partial.keepRepeats
+        ? this.partial.text
+        : collapseRepeats(this.partial.text);
+      out.push({ key: "partial", text, partial: true });
     }
     return out;
   }
