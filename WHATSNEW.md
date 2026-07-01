@@ -22,6 +22,8 @@ runners are deprecated.
   Double-Metaphone sound-alike picker, merge/join, repetition collapse).
 - **Microphone picker + live hot-swap** — switch the input device mid-session
   without reloading the model; `--list-devices` CLI flag to list inputs.
+- **`--control-window`** opens the control panel in a second native window
+  (turnkey — no separate browser). A panel refresh now re-syncs full engine state.
 
 ### New — Audience layer (v2)
 - **Live audience rooms** — mint a room, audience joins via a **short URL / QR**;

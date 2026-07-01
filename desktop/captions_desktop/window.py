@@ -54,8 +54,16 @@ def run_webview(
     monitor: int = 0,
     transparent: bool = False,
     title: str = "Live Captions",
+    control_url: Optional[str] = None,
 ) -> None:
-    """Open the display fullscreen on the chosen monitor. Blocks until closed."""
+    """Open the display fullscreen on the chosen monitor. Blocks until all windows
+    close. If ``control_url`` is given, also open the operator control panel in a
+    second framed, resizable window (turnkey — no separate browser needed).
+
+    All windows must be created before ``webview.start()`` (it owns the main thread,
+    esp. on macOS), so the control window can't be toggled at runtime — it's a
+    launch-time choice.
+    """
     import webview
 
     kwargs: dict = {
@@ -70,6 +78,14 @@ def run_webview(
         kwargs["screen"] = screens[monitor]
 
     webview.create_window(title, url, **kwargs)
+    if control_url:
+        webview.create_window(
+            "Caption Guru — Control",
+            control_url,
+            width=1100,
+            height=820,
+            min_size=(720, 560),
+        )
     webview.start()
 
 

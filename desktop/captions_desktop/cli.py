@@ -99,6 +99,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     # Display output
     serve.add_argument("--monitor", type=int, default=0, help="monitor index (HDMI out)")
     serve.add_argument("--windowed", action="store_true", help="don't go fullscreen")
+    serve.add_argument(
+        "--control-window",
+        action="store_true",
+        help="also open the operator control panel (/control) in a second native window",
+    )
     serve.add_argument("--kiosk", action="store_true", help="use Chrome kiosk fallback")
     serve.add_argument("--no-open", action="store_true", help="server only, no window")
     serve.add_argument("--list-monitors", action="store_true", help="list monitors + exit")
@@ -265,6 +270,7 @@ def _serve(args: argparse.Namespace) -> None:
                 fullscreen=not args.windowed,
                 monitor=args.monitor,
                 transparent=transparent,
+                control_url=f"{base}/control" if args.control_window else None,
             )
     finally:
         server.should_exit = True
