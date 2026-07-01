@@ -25,6 +25,22 @@ from .protocol import QrOverlay, QrOverlayOverrides
 DEFAULT_QR_POS = {"x": 72.0, "y": 6.0, "size": 24.0}
 
 
+def _user_agent() -> str:
+    """A real User-Agent for our outbound room calls. Cloudflare's edge blocks the
+    default ``Python-urllib`` / ``websockets`` UAs with a 403, so both the mint POST
+    and the publish WebSocket must identify as this app instead."""
+    try:
+        from importlib.metadata import version
+
+        ver = version("captions-desktop")
+    except Exception:  # noqa: BLE001 - package metadata may be absent in a frozen bundle
+        ver = "dev"
+    return f"caption-guru-desktop/{ver}"
+
+
+USER_AGENT = _user_agent()
+
+
 class RoomError(RuntimeError):
     """A room could not be minted (network / bad base URL)."""
 
@@ -34,6 +50,7 @@ def create_room(base: str) -> dict:
     publishUrl, …). Raises :class:`RoomError` on failure."""
     url = base.rstrip("/") + "/r/new"
     req = urllib.request.Request(url, method="POST")
+    req.add_header("User-Agent", USER_AGENT)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode())

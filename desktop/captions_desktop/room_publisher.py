@@ -16,6 +16,8 @@ from typing import Optional
 
 import websockets
 
+from .rooms import USER_AGENT
+
 from .hub import CaptionHub
 from .protocol import dump_message
 
@@ -47,7 +49,9 @@ class RoomPublisher:
         backoff = 0.5
         while not self._stop.is_set():
             try:
-                async with websockets.connect(self._url) as ws:
+                # A real User-Agent — Cloudflare's edge 403s the default
+                # `websockets/x.y` UA on the publish handshake (same as /r/new).
+                async with websockets.connect(self._url, user_agent_header=USER_AGENT) as ws:
                     backoff = 0.5
                     await self._pump(ws)
             except asyncio.CancelledError:
