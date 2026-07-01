@@ -8,6 +8,8 @@ import time
 from typing import Optional, Sequence
 
 from .hub import CaptionHub
+from .rooms import RoomError, build_qr_config, create_room
+from .rooms import join_url as build_join_url
 from .web import find_web_dir
 
 
@@ -78,7 +80,15 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         default=None,
         metavar="URL",
         help="public base that serves the audience viewer page (default: --start-room "
-        "base); the join QR points at <viewer-base>/viewer.html",
+        "base); the join QR points at <viewer-base>/viewer.html. Also enables "
+        "runtime Start Room from the control panel without auto-starting at launch.",
+    )
+    serve.add_argument(
+        "--qr-png-path",
+        default=None,
+        metavar="PATH",
+        help="write/update a downloadable 'scan to join' QR PNG at this path each "
+        "time a room starts (for dropping into slide gear alongside the live overlay)",
     )
 
     # Display output
@@ -167,16 +177,25 @@ def _serve(args: argparse.Namespace) -> None:
     if terms:
         controller.set_dictionary(terms)
 
+    # Base to mint rooms against (also enables runtime Start Room from the panel).
+    room_base = args.start_room or args.viewer_base
+    viewer_base = args.viewer_base or args.start_room
+
     publish_url = args.publish_url
     join_url = None
     if args.start_room:
-        room = _create_room(args.start_room)
+        try:
+            room = create_room(args.start_room)
+        except RoomError as exc:
+            raise SystemExit(f"--start-room: {exc}")
         publish_url = room["publishUrl"]
-        join_url = _join_url(args.viewer_base or args.start_room, args.start_room, room["id"])
-        # Show a join QR on the display (rendered only in chroma-key mode).
-        hub.set_config(
-            {"qr": {"url": join_url, "x": 72.0, "y": 6.0, "size": 24.0}}
-        )
+        join_url = build_join_url(viewer_base, args.start_room, room["id"])
+        # Show the join QR on the display (standalone overlay, any background mode).
+        hub.set_config({"qr": build_qr_config(join_url, None)})
+        if args.qr_png_path:
+            from .qr_png import write_qr_slide_png
+
+            write_qr_slide_png(join_url, args.qr_png_path)
 
     web_dir = find_web_dir(args.web)
     app = build_app(
@@ -184,6 +203,10 @@ def _serve(args: argparse.Namespace) -> None:
         controller,
         web_dir=web_dir,
         room_publish_url=publish_url,
+        room_join_url=join_url,
+        room_base=room_base,
+        viewer_base=viewer_base,
+        qr_png_path=args.qr_png_path,
         autostart=args.autostart,
     )
 
@@ -269,31 +292,6 @@ def _apply_caption_region(hub: CaptionHub, args: argparse.Namespace) -> None:
             "--caption-region must be four numbers: X,Y,W,H (percent of frame)"
         )
     hub.set_config({"region": {"x": x, "y": y, "width": w, "height": h}})
-
-
-def _join_url(viewer_base: str, room_base: str, room_id: str) -> str:
-    """Short audience join URL the QR encodes (the /room page, not the ws socket)."""
-    vb = viewer_base.rstrip("/")
-    if room_base.rstrip("/") == vb:
-        return f"{vb}/room?{room_id}"  # → /room?<id>
-    # Room WebSocket on a different host than the viewer page: be explicit.
-    from urllib.parse import quote
-
-    return f"{vb}/room?room={room_id}&base=" + quote(room_base.rstrip("/"), safe="")
-
-
-def _create_room(base: str) -> dict:
-    """POST <base>/r/new to mint an audience room; returns the room's URLs."""
-    import json
-    import urllib.request
-
-    url = base.rstrip("/") + "/r/new"
-    req = urllib.request.Request(url, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
-    except Exception as exc:  # noqa: BLE001 - surface a clean startup error
-        raise SystemExit(f"--start-room: could not create a room at {url}: {exc}")
 
 
 def _run_server_threaded(app, host: str, port: int):

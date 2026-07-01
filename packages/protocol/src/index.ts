@@ -23,8 +23,11 @@ export * from "./suggest.js";
  *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
  *  v5: `setModel` client message (desktop live/refine model hot-swap).
  *  v6: `editSegment` client message (operator correction over the control WS).
- *  v7: `presence` server message (audience-room connected-device count). */
-export const PROTOCOL_VERSION = 7;
+ *  v7: `presence` server message (audience-room connected-device count).
+ *  v8: QrOverlay gains `enabled`/`label`/`exclusive` (standalone operator-toggled
+ *      overlay, any background mode); `roomControl` client message (desktop
+ *      runtime room start/stop/restart). */
+export const PROTOCOL_VERSION = 8;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -293,10 +296,11 @@ export const CaptionRegionSchema = z.object({
 export type CaptionRegion = z.infer<typeof CaptionRegionSchema>;
 
 /**
- * QR overlay advertising the live audience room. Shown by the display only in
- * chroma-key mode (it breaks out of the caption box onto the keyed canvas, big
- * enough to scan across an auditorium). Position is the top-left as % of frame;
- * `size` is the square edge as % of the smaller frame dimension.
+ * QR overlay advertising the live audience room. A standalone, operator-toggled
+ * element rendered by the display in ANY background mode (not chroma-only). It
+ * breaks out of the caption box (big enough to scan across an auditorium).
+ * Position is the top-left as % of frame; `size` is the square edge as % of the
+ * smaller frame dimension.
  */
 export const QrOverlaySchema = z.object({
   /** the room join/subscribe link the QR encodes */
@@ -304,6 +308,12 @@ export const QrOverlaySchema = z.object({
   x: z.number().min(0).max(100),
   y: z.number().min(0).max(100),
   size: z.number().min(0).max(100),
+  /** operator on/off toggle — false hides the overlay without dropping the url */
+  enabled: z.boolean().default(true),
+  /** caption shown beside the QR explaining it (e.g. "Scan for live captions") */
+  label: z.string().default("Scan for live captions"),
+  /** while shown, hide the caption lines (full-attention "scan now" moment) */
+  exclusive: z.boolean().default(false),
 });
 export type QrOverlay = z.infer<typeof QrOverlaySchema>;
 
@@ -331,7 +341,7 @@ export const DisplayConfigSchema = z.object({
   boxRadius: z.number().min(0).optional(),
   /** operator-placed caption box (% of frame); omitted = full-frame + position */
   region: CaptionRegionSchema.optional(),
-  /** live-room QR overlay; rendered by the display only in chroma-key mode */
+  /** live-room QR overlay; standalone operator-toggled, rendered in any mode */
   qr: QrOverlaySchema.optional(),
 });
 export type DisplayConfig = z.infer<typeof DisplayConfigSchema>;
@@ -456,6 +466,16 @@ export const EditSegmentMessageSchema = z.object({
   type: z.literal("editSegment"),
   segment: CaptionSegmentSchema,
 });
+/** Desktop runtime audience-room control from a control client (operator panel):
+ *  `start` mints + publishes a fresh room, `stop` tears it down, `restart`
+ *  reopens the last stopped room. Optional `qr` overrides seed the join overlay
+ *  (position/size/label/exclusive) chosen in the panel. */
+export const RoomControlMessageSchema = z.object({
+  type: z.literal("roomControl"),
+  action: z.enum(["start", "stop", "restart"]),
+  /** overlay overrides for the minted join QR (url is filled in server-side) */
+  qr: QrOverlaySchema.omit({ url: true }).partial().optional(),
+});
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetConfigMessageSchema,
@@ -464,6 +484,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   RequestHistoryMessageSchema,
   SetModelMessageSchema,
   EditSegmentMessageSchema,
+  RoomControlMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 

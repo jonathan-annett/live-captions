@@ -198,7 +198,68 @@ def test_qr_overlay_round_trips_camelcase():
     msg = parse_server_message(wire)
     assert msg.config.qr is not None
     assert msg.config.qr.url.endswith("/r/abc/subscribe")
+    # v8: standalone fields default when omitted (legacy configs stay valid)
+    assert msg.config.qr.enabled is True
+    assert msg.config.qr.label == "Scan for live captions"
+    assert msg.config.qr.exclusive is False
     assert "qr" in json.loads(dump_message(msg))["config"]
+
+
+def test_qr_overlay_standalone_fields_round_trip():
+    wire = json.dumps(
+        {
+            "type": "config",
+            "config": {
+                "fontFamily": "Inter",
+                "fontSize": 6,
+                "fontWeight": 700,
+                "orientation": "horizontal",
+                "color": "#fff",
+                "background": {"kind": "solid", "color": "#000"},
+                "position": "bottom",
+                "textAlign": "center",
+                "maxLines": 2,
+                "mode": "rolling",
+                "showPartial": True,
+                "uppercase": False,
+                "qr": {
+                    "url": "https://v2.caption.guru/r/abc/subscribe",
+                    "x": 70,
+                    "y": 5,
+                    "size": 25,
+                    "enabled": False,
+                    "label": "Scan now",
+                    "exclusive": True,
+                },
+            },
+        }
+    )
+    msg = parse_server_message(wire)
+    assert msg.config.qr.enabled is False
+    assert msg.config.qr.label == "Scan now"
+    assert msg.config.qr.exclusive is True
+    out = json.loads(dump_message(msg))["config"]["qr"]
+    assert out["enabled"] is False and out["label"] == "Scan now" and out["exclusive"] is True
+
+
+def test_parse_room_control_message():
+    msg = parse_client_message(
+        json.dumps(
+            {
+                "type": "roomControl",
+                "action": "start",
+                "qr": {"x": 60, "size": 30, "label": "Join", "exclusive": True},
+            }
+        )
+    )
+    assert msg.action == "start"
+    assert msg.qr is not None and msg.qr.label == "Join" and msg.qr.exclusive is True
+
+
+def test_parse_room_control_stop_bare():
+    msg = parse_client_message(json.dumps({"type": "roomControl", "action": "stop"}))
+    assert msg.action == "stop"
+    assert msg.qr is None
 
 
 def test_parse_client_history_request():

@@ -2,6 +2,13 @@
 
 Notable changes per release. (Format loosely follows Keep a Changelog.)
 
+## Unreleased — v2 beta (v2.caption.guru)
+
+**Audience room — QR overlay redesign** (protocol v8)
+- QR overlay is now a **standalone, operator-toggled** element: explicit on/off, works in **any** background mode (solid / transparent / chroma — no longer chroma-only), freely positioned/sized, with an **editable label** and an **exclusive** mode that hides captions for a full-attention "scan now" moment.
+- **Persistent QR PNG**, rewritten on every room start: PWA via the Chromium **File System Access API** (handle stored in IndexedDB); desktop via **`--qr-png-path`** (segno) — point OBS/PowerPoint at the file and it auto-refreshes. Full-screen PNG download still available everywhere.
+- **Desktop runtime room controls** — Start/Stop/Restart room + QR controls now in the desktop `/control` panel via a new `roomControl` message (was CLI-launch-flags only). Closes the last PWA↔desktop parity-audit gap.
+
 ## v0.1.0 — 2026-06-29
 
 First public release.

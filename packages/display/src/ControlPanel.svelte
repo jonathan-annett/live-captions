@@ -12,6 +12,8 @@
   import Corrections from "./Corrections.svelte";
   import { ViewerStore } from "./viewerStore.svelte.js";
   import { connectionView } from "./viewerView.js";
+  import { qrSvg } from "./qr.js";
+  import { qrSlidePngBlob } from "./qrPng.js";
   import type { ConnectionState } from "./sources/types.js";
 
   // Desktop control panel: a thin client over the server's /ws. It mirrors the
@@ -76,6 +78,19 @@
   const effectiveBoxH = $derived(autoHeight ? computedBoxH : boxH);
 
   let dictionaryText = $state("");
+
+  // --- audience room + join QR overlay --------------------------------------
+  // Start/Stop/Restart mint/tear-down a cloud room over the control socket; the
+  // QR controls seed (and live-tweak) the on-display join overlay. The server is
+  // the source of truth for the minted join URL — we read it back from config.qr.
+  let qrEnabled = $state(true);
+  let qrX = $state(72);
+  let qrY = $state(6);
+  let qrSize = $state(24);
+  let qrLabel = $state("Scan for live captions");
+  let qrExclusive = $state(false);
+  const joinUrl = $derived(store.config.qr?.url ?? null);
+  const roomLive = $derived(joinUrl != null);
 
   // --- model picker (desktop hot-swap) --------------------------------------
   // Live model stays fast; refine model can be large (two-tier). A real <select>
@@ -151,6 +166,16 @@
       boxW = c.region.width;
       boxH = c.region.height;
     }
+    // Adopt the server's join-QR overlay (if a room is already live) so the panel
+    // reflects it instead of clobbering it with panel defaults.
+    if (c.qr) {
+      qrEnabled = c.qr.enabled;
+      qrX = c.qr.x;
+      qrY = c.qr.y;
+      qrSize = c.qr.size;
+      qrLabel = c.qr.label;
+      qrExclusive = c.qr.exclusive;
+    }
   }
 
   onMount(() => {
@@ -217,6 +242,48 @@
     socket?.send({ type: "setModel", model, refineModel: refine || undefined });
     lsSet("cg.model", model);
     lsSet("cg.refineModel", refine);
+  }
+
+  // --- audience room control ------------------------------------------------
+  function qrOverrides() {
+    return {
+      x: qrX,
+      y: qrY,
+      size: qrSize,
+      enabled: qrEnabled,
+      label: qrLabel,
+      exclusive: qrExclusive,
+    };
+  }
+
+  function roomControl(action: "start" | "stop" | "restart"): void {
+    // start/restart carry the operator's overlay choices; stop needs no qr.
+    socket?.send({
+      type: "roomControl",
+      action,
+      qr: action === "stop" ? undefined : qrOverrides(),
+    });
+  }
+
+  // Live-tweak the overlay on an already-running room: resend a full qr config
+  // (with the server-minted url) whenever a control changes. No-op until a room
+  // is live, so it never fabricates a url or fights a stopped room.
+  $effect(() => {
+    const url = store.config.qr?.url;
+    const over = qrOverrides(); // reactive deps: every qr control
+    if (!synced || !url) return;
+    socket?.send({ type: "setConfig", config: { qr: { url, ...over } } });
+  });
+
+  async function downloadSlide(): Promise<void> {
+    if (!joinUrl) return;
+    const blob = await qrSlidePngBlob(joinUrl, { title: qrLabel });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "caption-room-qr.png";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // --- operator corrections -------------------------------------------------
@@ -392,6 +459,39 @@
     {/if}
   </section>
 
+  <section class="room">
+    <h2>Audience room</h2>
+    <div class="room-actions">
+      <button class="go" onclick={() => roomControl("start")}>Start room</button>
+      <button onclick={() => roomControl("stop")} disabled={!roomLive}>Stop room</button>
+      <button onclick={() => roomControl("restart")}>Restart room</button>
+    </div>
+    <label class="check"><input type="checkbox" bind:checked={qrEnabled} /> Show join QR</label>
+    <label class="check">
+      <input type="checkbox" bind:checked={qrExclusive} /> Exclusive (hide captions while shown)
+    </label>
+    <label class="wide">QR label <input type="text" bind:value={qrLabel} /></label>
+    <div class="region">
+      <label>X% <input type="number" min="0" max="100" bind:value={qrX} /></label>
+      <label>Y% <input type="number" min="0" max="100" bind:value={qrY} /></label>
+      <label>Size% <input type="number" min="0" max="100" bind:value={qrSize} /></label>
+    </div>
+    {#if roomLive && joinUrl}
+      <div class="join">
+        <div class="join-qr">{@html qrSvg(joinUrl)}</div>
+        <div class="join-meta">
+          <a href={joinUrl} target="_blank" rel="noreferrer">{joinUrl}</a>
+          <button onclick={downloadSlide}>Download QR slide (PNG)</button>
+        </div>
+      </div>
+    {:else}
+      <p class="hint">
+        No live room. Click <strong>Start room</strong> to mint one and show its
+        join QR on the display.
+      </p>
+    {/if}
+  </section>
+
   <section class="dict">
     <h2>Dictionary</h2>
     <textarea
@@ -518,15 +618,72 @@
     border-color: #1d5c34;
   }
   .look,
-  .model {
+  .model,
+  .room {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem 1rem;
     align-items: center;
   }
   .look h2,
-  .model h2 {
+  .model h2,
+  .room h2 {
     grid-column: 1 / -1;
+  }
+  .room-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 0.5rem;
+  }
+  .room .wide,
+  .room .region,
+  .room .join,
+  .room .hint {
+    grid-column: 1 / -1;
+  }
+  .room input[type="text"],
+  .room input[type="number"] {
+    background: #1a1a1a;
+    color: #e6e6e6;
+    border: 1px solid #3a3a3a;
+    border-radius: 5px;
+    padding: 0.3rem 0.4rem;
+    font: inherit;
+  }
+  .room .hint {
+    font-size: 0.78rem;
+    color: #777;
+    margin: 0.2rem 0 0;
+  }
+  .join {
+    display: flex;
+    gap: 0.9rem;
+    align-items: center;
+    margin-top: 0.4rem;
+  }
+  .join-qr {
+    width: 92px;
+    height: 92px;
+    background: #fff;
+    padding: 4px;
+    border-radius: 6px;
+    flex: none;
+  }
+  .join-qr :global(svg) {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  .join-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .join-meta a {
+    color: #9fb4d4;
+    word-break: break-all;
+    font-size: 0.82rem;
   }
   .model-apply {
     grid-column: 1 / -1;

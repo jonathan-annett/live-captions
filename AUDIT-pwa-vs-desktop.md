@@ -28,8 +28,8 @@
 
 **PWA-only → ported to the desktop `/control` panel:** auto-height caption box, transcript export buttons (TXT/SRT/VTT), live-apply dictionary + usage help, state-based Start/Stop/Clear disabling. N/A on desktop by nature: open-display button (native window), in-browser download bar + per-model dtype (server-side only).
 
-**⚠️ OUTSTANDING — the one remaining audit item:**
-- **Desktop runtime audience-room controls** — Start/Stop room, live QR overlay toggle, downloadable QR PNG. On desktop these remain **CLI-launch-flags only** (`--start-room` / `--viewer-base` / `--caption-region`); the `/control` panel cannot manage a room at runtime. This needs new protocol messages + `server.py` room lifecycle, and it overlaps the planned **QR-overlay redesign**, so it is tracked to be built **together with that** (see `ROADMAP.md`). This is the only Section-B parity gap neither closed nor intentionally left by-design.
+**✅ CLOSED (2026-07-01) — the last audit item, shipped with the QR-overlay redesign (protocol v8):**
+- **Desktop runtime audience-room controls** — Start/Stop/Restart room, live QR overlay toggle, downloadable QR PNG. No longer CLI-launch-flags only: a new `roomControl` client message (`start`/`stop`/`restart` + QR overrides) drives a server-side `RoomManager` (`desktop/captions_desktop/rooms.py`) that mints a room, swaps the `RoomPublisher`, sets the hub QR config, and writes the QR slide PNG (`--qr-png-path`, segno) at runtime. Controls now live in the desktop `/control` panel (`ControlPanel.svelte`). **All Section-B parity gaps are now closed or intentionally left by-design.**
 
 **Also noted (not a bug):** both sides are effectively English-only — multilingual is a future feature, not drift.
 

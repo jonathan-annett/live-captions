@@ -30,6 +30,14 @@
     type LastRoom,
     type PersistedSession,
   } from "./session.js";
+  import {
+    clearQrPngHandle,
+    fsAccessSupported,
+    loadQrPngHandle,
+    pickQrPngHandle,
+    writeQrPng,
+    type QrFileHandle,
+  } from "./fileHandle.js";
 
   const CHANNEL = "captions";
   // `size` is the approximate one-time download (cached after first use), shown
@@ -119,6 +127,11 @@
   let lastRoom = $state<LastRoom | null>(loadLastRoom());
   // Audience devices currently connected to the room (from the DO's `presence`).
   let deviceCount = $state<number | null>(null);
+  // Optional persistent QR PNG file (Chromium File System Access). When set, the
+  // current room's QR slide is rewritten to this exact file on each room start.
+  const fsSupported = fsAccessSupported();
+  let qrFileHandle = $state<QrFileHandle | null>(null);
+  let qrFileError = $state<string | null>(null);
 
   // The QR/join target is the short audience page /room?<id>. When the room's
   // WebSocket lives on a different origin than this page, fall back to the
@@ -196,7 +209,45 @@
   // captions but fewer mid-utterance errors on screen.
   let showLive = $state<boolean>(savedLook.showLive !== false);
   let uppercase = $state<boolean>(savedLook.uppercase === true);
-  let qr = $state<DisplayConfig["qr"]>(undefined);
+
+  // Join-QR overlay prefs (persisted under cg.qr; the url is minted per-room and
+  // is NOT saved). The overlay is standalone/operator-toggled and renders in any
+  // background mode — it's woven into the pushed config below via `qr`.
+  const LS_QR = "cg.qr";
+  const savedQr: Record<string, unknown> = (() => {
+    try {
+      return JSON.parse(lsGet(LS_QR) ?? "{}") as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  })();
+  const qrNum = (k: string, d: number) =>
+    typeof savedQr[k] === "number" ? (savedQr[k] as number) : d;
+  let qrEnabled = $state<boolean>(savedQr.enabled !== false); // default true
+  let qrX = $state<number>(qrNum("x", 72));
+  let qrY = $state<number>(qrNum("y", 6));
+  let qrSize = $state<number>(qrNum("size", 24));
+  let qrLabel = $state<string>(
+    typeof savedQr.label === "string" ? (savedQr.label as string) : "Scan for live captions",
+  );
+  let qrExclusive = $state<boolean>(savedQr.exclusive === true);
+
+  // The overlay pushed to the display: minted from the live room's join URL plus
+  // the operator's prefs, so any control change immediately re-pushes (via the
+  // config $effect). Absent when no room is open.
+  const qr = $derived.by<DisplayConfig["qr"]>(() =>
+    room
+      ? {
+          url: room.joinUrl,
+          x: qrX,
+          y: qrY,
+          size: qrSize,
+          enabled: qrEnabled,
+          label: qrLabel,
+          exclusive: qrExclusive,
+        }
+      : undefined,
+  );
 
   // Derived from its parts (never mutated in place) so updating it can't loop.
   const displayConfig = $derived.by<DisplayConfig>(() => {
@@ -246,6 +297,21 @@
         boxLines,
         showLive,
         uppercase,
+      }),
+    );
+  });
+
+  // Persist the operator's QR overlay prefs (never the per-room url).
+  $effect(() => {
+    lsSet(
+      LS_QR,
+      JSON.stringify({
+        enabled: qrEnabled,
+        x: qrX,
+        y: qrY,
+        size: qrSize,
+        label: qrLabel,
+        exclusive: qrExclusive,
       }),
     );
   });
@@ -321,9 +387,9 @@
       publisher?.stop();
       publisher = newPublisher(r.publishUrl);
       publisher.start();
-      // Advertise the join QR on the display (shown only in chroma mode);
-      // the $effect picks this up and pushes the new config.
-      qr = { url: joinUrl, x: 72, y: 6, size: 24 };
+      // `qr` derives from the now-live room + prefs, so the config $effect pushes
+      // the join overlay automatically. Refresh the persistent PNG file if set.
+      void writeQrFile();
     } catch (err) {
       roomError = String(err);
     }
@@ -349,8 +415,7 @@
     publishState = null;
     publishToken = null;
     deviceCount = null;
-    qr = undefined;
-    room = null;
+    room = null; // `qr` derives from `room`, so this clears the overlay too
     clearSession();
   }
 
@@ -365,7 +430,6 @@
     publishToken = last.publishToken;
     roomStartedAt = last.startedAt;
     sessionStartedAt = last.startedAt;
-    qr = { url: last.joinUrl, x: 72, y: 6, size: 24 };
     publisher?.stop();
     publisher = newPublisher(
       roomPublishUrl(last.roomId, last.publishToken, last.roomBase),
@@ -373,6 +437,7 @@
     publisher.start();
     lastRoom = null;
     clearLastRoom();
+    void writeQrFile(); // rewrite the persistent PNG for the reopened room
   }
 
   async function downloadQrPng(): Promise<void> {
@@ -384,6 +449,31 @@
     a.download = "caption-room-qr.png";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // --- persistent QR PNG file (Chromium only) -------------------------------
+  // Pick a real file on disk to remember; if a room is live, write it right away.
+  async function chooseQrFile(): Promise<void> {
+    const handle = await pickQrPngHandle();
+    if (!handle) return; // cancelled / unsupported
+    qrFileHandle = handle;
+    qrFileError = null;
+    await writeQrFile();
+  }
+
+  async function clearQrFile(): Promise<void> {
+    await clearQrPngHandle();
+    qrFileHandle = null;
+    qrFileError = null;
+  }
+
+  // Rewrite the remembered file with the current room's QR slide. No-op without a
+  // handle or a live room; surfaces (never throws on) permission denial.
+  async function writeQrFile(): Promise<void> {
+    if (!qrFileHandle || !room) return;
+    const blob = await qrSlidePngBlob(room.joinUrl);
+    const ok = await writeQrPng(qrFileHandle, blob);
+    qrFileError = ok ? null : "Could not write the QR file (permission denied).";
   }
 
   // --- session recovery -----------------------------------------------------
@@ -479,8 +569,8 @@
     roomStartedAt = saved.startedAt;
     publishToken = saved.publishToken;
     for (const seg of saved.finals) store.apply({ type: "final", segment: seg });
-    room = { id: saved.roomId, joinUrl: saved.joinUrl };
-    qr = { url: saved.joinUrl, x: 72, y: 6, size: 24 };
+    room = { id: saved.roomId, joinUrl: saved.joinUrl }; // `qr` re-derives here
+    void writeQrFile();
     try {
       publisher = newPublisher(
         roomPublishUrl(saved.roomId, saved.publishToken, saved.roomBase),
@@ -661,6 +751,9 @@
   }
 
   onMount(async () => {
+    // Restore the remembered persistent QR file handle (if any) before recovery,
+    // so a recovered room can rewrite it too.
+    if (fsSupported) qrFileHandle = await loadQrPngHandle();
     // Recover a live session after a refresh (room + transcript now, mic on the
     // first gesture). Takes precedence over the legacy URL-publish path.
     const saved = loadSession();
@@ -984,13 +1077,60 @@
             <button onclick={downloadQrPng}>Download QR slide (PNG)</button>
             <button class="stop" onclick={stopRoom}>Stop room</button>
           </div>
-          {#if bgKind !== "chroma"}
-            <p class="room-note">
-              The join QR shows on the projection output only in <strong>chroma-key</strong>
-              mode. Switch the display background to chroma to overlay it — or hand out
-              the PNG slide.
-            </p>
-          {/if}
+
+          <fieldset class="qr-controls">
+            <legend>Join QR overlay</legend>
+            <label class="check">
+              <input type="checkbox" bind:checked={qrEnabled} />
+              Show QR overlay on the display
+            </label>
+            <label>
+              Label
+              <input type="text" bind:value={qrLabel} placeholder="Scan for live captions" />
+            </label>
+            <div class="qr-pos">
+              <label>
+                X · {qrX}%
+                <input type="number" min="0" max="100" bind:value={qrX} />
+              </label>
+              <label>
+                Y · {qrY}%
+                <input type="number" min="0" max="100" bind:value={qrY} />
+              </label>
+              <label>
+                Size · {qrSize}%
+                <input type="number" min="0" max="100" bind:value={qrSize} />
+              </label>
+            </div>
+            <label class="check">
+              <input type="checkbox" bind:checked={qrExclusive} />
+              Exclusive <small>hides captions while shown</small>
+            </label>
+
+            {#if fsSupported}
+              <div class="qr-file">
+                {#if qrFileHandle}
+                  <span>
+                    Auto-writing to <strong>{qrFileHandle.name}</strong> on each room start
+                  </span>
+                  <button onclick={chooseQrFile}>Change…</button>
+                  <button onclick={clearQrFile}>Clear</button>
+                {:else}
+                  <button onclick={chooseQrFile}>Set persistent PNG file…</button>
+                  <small>
+                    Rewrites a fixed file each room start — point OBS / PowerPoint at it
+                    to auto-refresh.
+                  </small>
+                {/if}
+                {#if qrFileError}<span class="room-err">{qrFileError}</span>{/if}
+              </div>
+            {:else}
+              <small class="qr-file-note">
+                Persistent QR file needs a Chromium browser; the PNG download works
+                everywhere.
+              </small>
+            {/if}
+          </fieldset>
         </div>
         <div class="room-qr">
           <!-- eslint-disable-next-line svelte/no-at-html-tags -- generated SVG, no user HTML -->
@@ -1346,6 +1486,44 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  .qr-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0.2rem 0 0;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid #222;
+    border-radius: 8px;
+    max-width: 32rem;
+  }
+  .qr-controls legend {
+    font-size: 0.8rem;
+    color: #9fb4d4;
+    padding: 0 0.3rem;
+  }
+  .qr-pos {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .qr-pos label {
+    flex: 1 1 5rem;
+  }
+  .qr-pos input {
+    width: 100%;
+  }
+  .qr-file {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: #999;
+  }
+  .qr-file-note {
+    font-size: 0.8rem;
+    color: #999;
   }
   .room-started {
     font-size: 0.8rem;

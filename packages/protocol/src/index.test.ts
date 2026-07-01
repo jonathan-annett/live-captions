@@ -46,7 +46,7 @@ describe("server messages", () => {
     expect(parsed.type === "config" && parsed.config.region?.height).toBe(25);
   });
 
-  it("accepts a config with a QR overlay", () => {
+  it("accepts a config with a QR overlay and defaults the standalone fields", () => {
     const parsed = parseServerMessage({
       type: "config",
       config: {
@@ -55,6 +55,31 @@ describe("server messages", () => {
       },
     });
     expect(parsed.type === "config" && parsed.config.qr?.url).toContain("/r/abc/");
+    // enabled/label/exclusive default when omitted (legacy configs stay valid)
+    expect(parsed.type === "config" && parsed.config.qr?.enabled).toBe(true);
+    expect(parsed.type === "config" && parsed.config.qr?.label).toBe("Scan for live captions");
+    expect(parsed.type === "config" && parsed.config.qr?.exclusive).toBe(false);
+  });
+
+  it("round-trips explicit QR overlay standalone fields", () => {
+    const parsed = parseServerMessage({
+      type: "config",
+      config: {
+        ...DEFAULT_DISPLAY_CONFIG,
+        qr: {
+          url: "https://v2.caption.guru/r/abc/subscribe",
+          x: 70,
+          y: 5,
+          size: 25,
+          enabled: false,
+          label: "Scan now",
+          exclusive: true,
+        },
+      },
+    });
+    expect(parsed.type === "config" && parsed.config.qr?.enabled).toBe(false);
+    expect(parsed.type === "config" && parsed.config.qr?.label).toBe("Scan now");
+    expect(parsed.type === "config" && parsed.config.qr?.exclusive).toBe(true);
   });
 
   it("rejects an out-of-range caption region", () => {
@@ -265,5 +290,21 @@ describe("client messages", () => {
     });
     expect(parsed.type === "editSegment" && parsed.segment.text).toBe("Kubernetes");
     expect(parsed.type === "editSegment" && parsed.segment.locked).toBe(true);
+  });
+
+  it("parses a roomControl message with QR overrides", () => {
+    const parsed = parseClientMessage({
+      type: "roomControl",
+      action: "start",
+      qr: { x: 60, size: 30, label: "Join", exclusive: true },
+    });
+    expect(parsed.type === "roomControl" && parsed.action).toBe("start");
+    expect(parsed.type === "roomControl" && parsed.qr?.label).toBe("Join");
+    expect(parsed.type === "roomControl" && parsed.qr?.exclusive).toBe(true);
+  });
+
+  it("parses a bare roomControl stop", () => {
+    const parsed = parseClientMessage({ type: "roomControl", action: "stop" });
+    expect(parsed.type === "roomControl" && parsed.action).toBe("stop");
   });
 });

@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Jonathan Annett" }]
 dependencies = [
   "pydantic>=2.7",
+  "segno>=1.6",
 ]
 
 # Heavy / platform-specific runtime deps land in M4+. Kept as extras so the

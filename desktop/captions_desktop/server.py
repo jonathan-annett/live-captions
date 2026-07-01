@@ -20,12 +20,14 @@ from .protocol import (
     EditSegmentMessage,
     HistoryMessage,
     RequestHistoryMessage,
+    RoomControlMessage,
     SetConfigMessage,
     SetDictionaryMessage,
     SetModelMessage,
     dump_message,
     parse_client_message,
 )
+from .rooms import RoomManager
 from .streaming import Controller
 
 
@@ -35,21 +37,30 @@ def build_app(
     web_dir: Optional[Path] = None,
     autostart: bool = True,
     room_publish_url: Optional[str] = None,
+    room_join_url: Optional[str] = None,
+    room_base: Optional[str] = None,
+    viewer_base: Optional[str] = None,
+    qr_png_path: Optional[str] = None,
 ) -> FastAPI:
+    # Runtime audience-room state (start/stop/restart from the operator panel).
+    manager = RoomManager(
+        hub, room_base=room_base, viewer_base=viewer_base, qr_png_path=qr_png_path
+    )
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         hub.bind_loop(asyncio.get_running_loop())
         if autostart:
             controller.start()
-        publisher = None
         if room_publish_url:
             from .room_publisher import RoomPublisher
 
             publisher = RoomPublisher(hub, room_publish_url)
             publisher.start()
+            # Adopt the launch-time room so runtime stop/restart can manage it.
+            manager.adopt(publisher, room_publish_url, room_join_url)
         yield
-        if publisher is not None:
-            await publisher.stop()
+        await manager._stop_publisher()
         controller.stop()
 
     app = FastAPI(title="Caption Guru", lifespan=lifespan)
@@ -83,7 +94,7 @@ def build_app(
             try:
                 while True:
                     data = await sock.receive_text()
-                    _handle_client(hub, controller, data, q)
+                    _handle_client(hub, controller, data, q, manager)
             except WebSocketDisconnect:
                 pass
 
@@ -141,6 +152,7 @@ def _handle_client(
     controller: Controller,
     data: str,
     q: "asyncio.Queue",
+    manager: Optional[RoomManager] = None,
 ) -> None:
     try:
         msg = parse_client_message(data)
@@ -170,3 +182,9 @@ def _handle_client(
         # Operator correction: emit as a final → hub upserts by id (lock-aware),
         # replacing the segment in place and rebroadcasting to display + room.
         hub.emit_final(msg.segment)
+    elif isinstance(msg, RoomControlMessage):
+        # Runtime room start/stop/restart. Minting does network I/O and toggling
+        # the publisher is async, so run it as a task on the ws loop (this handler
+        # stays sync for the other, synchronous branches).
+        if manager is not None:
+            asyncio.create_task(manager.handle(msg.action, msg.qr))

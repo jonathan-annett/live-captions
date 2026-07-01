@@ -26,6 +26,30 @@ def test_edit_segment_message_upserts_via_hub():
     assert hub.history()[-1].text == "Kubernetes"
 
 
+def test_room_control_message_dispatches_to_manager():
+    hub = CaptionHub()
+    hub.submit = hub._dispatch
+
+    class FakeManager:
+        def __init__(self):
+            self.calls = []
+
+        async def handle(self, action, qr):
+            self.calls.append((action, qr))
+
+    mgr = FakeManager()
+
+    async def drive():
+        data = json.dumps({"type": "roomControl", "action": "start", "qr": {"x": 10}})
+        _handle_client(hub, MockProducer(hub), data, asyncio.Queue(), mgr)
+        # create_task schedules on the loop; yield so it runs.
+        await asyncio.sleep(0)
+
+    asyncio.run(drive())
+    assert mgr.calls and mgr.calls[0][0] == "start"
+    assert mgr.calls[0][1] is not None and mgr.calls[0][1].x == 10
+
+
 def test_history_endpoint_empty_without_autostart():
     hub = CaptionHub()
     app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)

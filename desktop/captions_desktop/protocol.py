@@ -19,7 +19,10 @@ from pydantic.alias_generators import to_camel
 # v5: `setModel` client message (desktop live/refine model hot-swap).
 # v6: `editSegment` client message (operator correction over the control WS).
 # v7: `presence` server message (audience-room connected-device count).
-PROTOCOL_VERSION = 7
+# v8: QrOverlay gains `enabled`/`label`/`exclusive` (standalone operator-toggled
+#     overlay, any background mode); `roomControl` client message (runtime room
+#     start/stop/restart).
+PROTOCOL_VERSION = 8
 
 
 class _Model(BaseModel):
@@ -108,12 +111,18 @@ class CaptionRegion(_Model):
 
 
 class QrOverlay(_Model):
-    """Live-room QR overlay; the display shows it only in chroma-key mode."""
+    """Live-room QR overlay; standalone operator-toggled, rendered in any mode."""
 
     url: str
     x: float = Field(ge=0, le=100)
     y: float = Field(ge=0, le=100)
     size: float = Field(ge=0, le=100)  # square edge as % of the smaller frame dimension
+    # Operator on/off toggle — False hides the overlay without dropping the url.
+    enabled: bool = True
+    # Caption shown beside the QR (e.g. "Scan for live captions").
+    label: str = "Scan for live captions"
+    # While shown, hide the caption lines (full-attention "scan now" moment).
+    exclusive: bool = False
 
 
 class DisplayConfig(_Model):
@@ -138,7 +147,7 @@ class DisplayConfig(_Model):
     box_radius: Optional[float] = Field(default=None, ge=0)
     # Operator-placed caption box (% of frame); None = full-frame + position.
     region: Optional[CaptionRegion] = None
-    # Live-room QR overlay; the display shows it only in chroma-key mode.
+    # Live-room QR overlay; standalone operator-toggled, rendered in any mode.
     qr: Optional[QrOverlay] = None
 
 
@@ -272,6 +281,26 @@ class EditSegmentMessage(_Model):
     segment: CaptionSegment
 
 
+class QrOverlayOverrides(_Model):
+    """Operator-chosen overlay settings for a minted room QR (url filled in
+    server-side). Every field optional — mirrors QrOverlaySchema.omit({url}).partial()."""
+
+    x: Optional[float] = Field(default=None, ge=0, le=100)
+    y: Optional[float] = Field(default=None, ge=0, le=100)
+    size: Optional[float] = Field(default=None, ge=0, le=100)
+    enabled: Optional[bool] = None
+    label: Optional[str] = None
+    exclusive: Optional[bool] = None
+
+
+class RoomControlMessage(_Model):
+    # Runtime audience-room control from the operator panel: start mints + publishes
+    # a fresh room, stop tears it down, restart reopens the last stopped room.
+    type: Literal["roomControl"] = "roomControl"
+    action: Literal["start", "stop", "restart"]
+    qr: Optional[QrOverlayOverrides] = None
+
+
 ClientMessage = Annotated[
     Union[
         SetConfigMessage,
@@ -280,6 +309,7 @@ ClientMessage = Annotated[
         RequestHistoryMessage,
         SetModelMessage,
         EditSegmentMessage,
+        RoomControlMessage,
     ],
     Field(discriminator="type"),
 ]

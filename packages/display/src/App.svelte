@@ -46,10 +46,13 @@
   // text scrolls off the top; full-frame keeps the bounded rolling lines.
   const visibleLines = $derived(region ? store.recentLines : store.lines);
 
-  // Live-room QR overlay — only meaningful when the output is keyed, so it's
-  // gated to chroma mode (it breaks out of the caption box onto the green).
+  // Standalone operator-toggled QR overlay — renders in ANY background mode
+  // (solid/transparent/chroma) whenever the operator enables it.
   const qr = $derived(store.config.qr);
-  const isChroma = $derived(store.config.background.kind === "chroma");
+  const qrActive = $derived(!!qr?.enabled);
+  // Exclusive mode: a full-attention "scan now" moment — hide caption lines so
+  // only the QR + label show.
+  const qrExclusive = $derived(qrActive && !!qr?.exclusive);
 </script>
 
 <div
@@ -76,21 +79,27 @@
     style:height={region ? `${region.height}%` : null}
     style:justify-content={region ? "flex-end" : null}
   >
-    {#each visibleLines as line (line.key)}
-      <div class="line" class:partial={line.partial}>{line.text}</div>
-    {/each}
+    {#if !qrExclusive}
+      {#each visibleLines as line (line.key)}
+        <div class="line" class:partial={line.partial}>{line.text}</div>
+      {/each}
+    {/if}
   </div>
 
-  {#if qr && isChroma}
+  {#if qrActive && qr}
     <div
       class="qr"
       style:left={`${qr.x}%`}
       style:top={`${qr.y}%`}
       style:width={`${qr.size}vmin`}
-      style:height={`${qr.size}vmin`}
     >
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -- generated, no user HTML -->
-      {@html qrSvg(qr.url)}
+      <div class="qr-code" style:height={`${qr.size}vmin`}>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- generated, no user HTML -->
+        {@html qrSvg(qr.url)}
+      </div>
+      {#if qr.label}
+        <div class="qr-label">{qr.label}</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -140,13 +149,33 @@
   .line.partial {
     opacity: 0.6;
   }
-  /* Live-room QR: a square on the keyed canvas, can sit outside the caption box. */
+  /* Standalone QR overlay: the QR code (square) plus an optional caption label,
+     positioned/sized by the operator. Renders over any background mode. */
   .qr {
     position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
-  .qr :global(svg) {
+  .qr-code {
+    width: 100%;
+  }
+  .qr-code :global(svg) {
     width: 100%;
     height: 100%;
     display: block;
+  }
+  .qr-label {
+    margin-top: 0.6em;
+    color: #fff;
+    font-family: var(--cap-font);
+    font-weight: 700;
+    /* Proportional to the QR square so it stays readable at a distance. */
+    font-size: 2.4vmin;
+    line-height: 1.2;
+    text-align: center;
+    text-shadow:
+      0 0 0.5vh rgba(0, 0, 0, 0.9),
+      0 0.2vh 0.4vh rgba(0, 0, 0, 0.8);
   }
 </style>

@@ -70,6 +70,14 @@ Tiers, building on that one backbone:
   Also weigh: zipformer-en accuracy/punctuation vs Whisper small.en, model +
   bundle size, and whether GPU+CPU actually run without contending. Protocol is
   unaffected (just another engine behind the same interface).
+  **→ SCOPED 2026-07-01 (`SPIKE-sherpa-onnx.md`): recommendation GO on a ~4-day POC.**
+  The COOP/COEP risk resolves in our favor — sherpa-onnx's offline VAD+ASR WASM build
+  is **single-threaded + SIMD, no `-pthread`/SharedArrayBuffer** (verified in
+  `build-wasm-simd-vad-asr.sh`), so it coexists with the no-cross-origin-isolation
+  setup. Integration is small (protocol already has lock-aware same-id upsert; hook at
+  `captioner.ts:finishUtterance()`, mirror `asr.worker.ts`). Refine-model candidate:
+  **SenseVoice-Small int8** (~229 MB, ~5.5% WER). Residual risk is single-thread WASM
+  **perf on phones** (the POC must measure RTF); fallback = laptop/desktop opt-in `?refine=1`.
 - **Room session management** — beyond the current "reopen the last stopped room"
   shortcut, a proper registry of the operator's rooms: list recent/suspended
   sessions with their start/stop times, restart any of them (same id + token), and
@@ -114,16 +122,24 @@ Tiers, building on that one backbone:
   caption box (for lower-thirds keying); the QR may break out of the caption box, large
   enough to scan across an auditorium; a full-screen QR PNG is always downloadable for
   slides/other gear.
-- **QR overlay — standalone, fully operator-controlled** (design revised 2026-07-01,
-  supersedes the old "chroma-only, auto-shown" behavior): an explicit **on/off toggle**
-  (no longer tied to chroma mode), displayable in **any** background mode (solid /
-  transparent / chroma), freely **positioned and sized**, with an **editable message**
-  explaining what it is (e.g. "Scan for live captions"), plus an **exclusive** toggle
-  that **hides the captions while the QR is shown** (a full-attention "scan now" moment).
-  Full-screen QR PNG still always downloadable. Protocol: extend `QrOverlay` (lockstep TS
-  Zod ↔ pydantic) with `enabled`, `label`, `exclusive`; expose the controls in both
-  operator panels (`Control.svelte` + `ControlPanel.svelte`); the display renders it
-  independent of `background.kind`.
+- **QR overlay — standalone, fully operator-controlled** — ✅ **DONE (2026-07-01, protocol v8).**
+  Supersedes the old "chroma-only, auto-shown" behavior: explicit **on/off toggle** (no longer
+  tied to chroma mode), displayable in **any** background mode (solid / transparent / chroma),
+  freely **positioned and sized**, with an **editable message** (e.g. "Scan for live captions"),
+  plus an **exclusive** toggle that **hides the captions while the QR is shown** (full-attention
+  "scan now" moment). `QrOverlay` gained `enabled`/`label`/`exclusive` in lockstep (TS Zod ↔
+  pydantic); controls live in both operator panels (`Control.svelte` + `ControlPanel.svelte`);
+  the display (`App.svelte`) renders it independent of `background.kind`. Full-screen QR PNG
+  still always downloadable, PLUS a **persistent PNG file** the app rewrites on every room
+  start — **PWA** via the Chromium File System Access API (handle in IndexedDB,
+  `packages/pwa/src/fileHandle.ts`), **desktop** via `--qr-png-path` (segno,
+  `desktop/captions_desktop/qr_png.py`) — for an OBS/PowerPoint image source that auto-refreshes.
+- **Desktop runtime audience-room controls** — ✅ **DONE (2026-07-01)**, closing the last
+  parity-audit gap. New `roomControl` client message (`start`/`stop`/`restart` + QR overrides)
+  + a server-side `RoomManager` (`desktop/captions_desktop/rooms.py`) that mints a room, swaps
+  the `RoomPublisher`, sets the hub QR config, and writes the PNG at runtime — no longer
+  CLI-launch-flags only. Start/Stop/Restart room + QR controls now in the desktop `/control`
+  panel. **Absorbed the QR-overlay redesign's protocol + panel work (shipped together).**
 - **Native config screen** — GUI for audio device, fonts, theming, **and ASR model**
   (default-model picker + download/manage models) instead of CLI-only flags; PWA-identical
   layout with settings portable PWA↔desktop both ways. (Model *picker* may land with v2;
