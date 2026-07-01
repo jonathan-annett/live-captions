@@ -67,6 +67,22 @@ Tiers, building on that one backbone:
   so audio-level frames must **NOT** ride that path (pointless cloud bandwidth + reaches
   displays that don't need it) — send them on a **control-only side channel** or a message
   type the publisher filters out. Reuse the RMS the VAD already computes; keep it cheap.
+- **Unifying UX audit — consolidate the ad-hoc controls (both platforms)** — the current
+  iteration is **deliberately functionality-first** (each new capability lands as its own
+  control), which is the right call while features drive the work; but the two panels
+  (`Control.svelte` PWA + `ControlPanel.svelte` desktop) are accreting one-off inputs and
+  will eventually feel busy. **Task a dedicated agent to audit both surfaces** and propose a
+  coherent, simpler information architecture: group + rank controls by frequency of use,
+  kill redundancy, **unify labels/patterns across PWA↔desktop**, and — the high-leverage
+  part — flag controls that a **direct-manipulation gesture** could replace. **Flagship
+  example: drag-to-place on the on-air output** — let the operator move/resize the
+  **caption box** and the **QR overlay** directly with the mouse (drag handles on the
+  display surface / a live preview), writing back to `DisplayConfig.region` / `qr`. That one
+  interaction **collapses the numeric X/Y/W/H + QR X/Y/size inputs** (and their PWA/desktop
+  duplicates) into a single gesture — the model case for "make the accreted controls feel
+  organic." Deliverable = a **prioritized findings doc + a target IA**, not a big-bang
+  rewrite; sequence the simplifications behind ongoing feature work. Relates to the operator-
+  editor parity + VU-meter items above and reuses the shared `packages/display` surface.
 - **Spike: sherpa-onnx as a second in-browser ASR engine** (research) — evaluate
   [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/) (k2-fsa; Apache-2.0; ONNX
   Runtime **WASM** build for the browser) alongside the current transformers.js
