@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CaptionSegment } from "@captions/protocol";
-import { clearSession, loadSession, saveSession, type PersistedSession } from "./session.js";
+import {
+  clearLastRoom,
+  clearSession,
+  loadLastRoom,
+  loadSession,
+  saveLastRoom,
+  saveSession,
+  type LastRoom,
+  type PersistedSession,
+} from "./session.js";
 
 class MemStorage {
   private m = new Map<string, string>();
@@ -77,5 +86,34 @@ describe("session recovery persistence", () => {
     saveSession(base());
     clearSession();
     expect(loadSession()).toBeNull();
+  });
+});
+
+const lastRoom = (over: Partial<LastRoom> = {}): LastRoom => ({
+  roomId: "r1",
+  publishToken: "tok",
+  roomBase: "https://v2.caption.guru",
+  joinUrl: "https://v2.caption.guru/room?r1",
+  startedAt: Date.now(),
+  stoppedAt: Date.now(),
+  ...over,
+});
+
+describe("last stopped room", () => {
+  it("round-trips a recently stopped room", () => {
+    saveLastRoom(lastRoom());
+    expect(loadLastRoom()?.roomId).toBe("r1");
+    expect(loadLastRoom()?.publishToken).toBe("tok");
+  });
+
+  it("drops a room stopped beyond the offer window", () => {
+    saveLastRoom(lastRoom({ stoppedAt: Date.now() - 4 * 60 * 60 * 1000 }));
+    expect(loadLastRoom()).toBeNull();
+  });
+
+  it("clears the remembered room", () => {
+    saveLastRoom(lastRoom());
+    clearLastRoom();
+    expect(loadLastRoom()).toBeNull();
   });
 });

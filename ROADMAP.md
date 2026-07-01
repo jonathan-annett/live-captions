@@ -70,6 +70,12 @@ Tiers, building on that one backbone:
   Also weigh: zipformer-en accuracy/punctuation vs Whisper small.en, model +
   bundle size, and whether GPU+CPU actually run without contending. Protocol is
   unaffected (just another engine behind the same interface).
+- **Room session management** — beyond the current "reopen the last stopped room"
+  shortcut, a proper registry of the operator's rooms: list recent/suspended
+  sessions with their start/stop times, restart any of them (same id + token), and
+  end/forget them explicitly. Extends toward **historical sessions** — browse and
+  reopen past rooms (ties into archive/replay). The single-last-room reopen +
+  "room started at …" indicator already shipped; this is the multi-session UI.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized

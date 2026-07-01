@@ -21,9 +21,13 @@
   import Corrections from "./Corrections.svelte";
   import { UiStore } from "./uiStore.svelte.js";
   import {
+    clearLastRoom,
     clearSession,
+    loadLastRoom,
     loadSession,
+    saveLastRoom,
     saveSession,
+    type LastRoom,
     type PersistedSession,
   } from "./session.js";
 
@@ -109,6 +113,10 @@
   let resuming = false;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let sessionStartedAt = 0;
+  // When the active room was created (for the "started at …" indicator), and the
+  // most recently stopped room (offer to reopen the same id/token).
+  let roomStartedAt = $state(0);
+  let lastRoom = $state<LastRoom | null>(loadLastRoom());
 
   // The QR/join target is the short audience page /room?<id>. When the room's
   // WebSocket lives on a different origin than this page, fall back to the
@@ -291,6 +299,10 @@
       room = { id: r.id, joinUrl };
       publishToken = r.publishToken;
       sessionStartedAt = Date.now();
+      roomStartedAt = Date.now();
+      // A freshly minted room supersedes any remembered stopped room.
+      lastRoom = null;
+      clearLastRoom();
       publisher?.stop();
       publisher = new RoomPublisher(r.publishUrl, {
         onState: (s) => (publishState = s),
@@ -306,6 +318,20 @@
   }
 
   function stopRoom(): void {
+    // Remember the room so it can be reopened — its DO keeps the token (and, for
+    // 30 min, the transcript), so restarting reconnects the same audience link.
+    if (room && publishToken) {
+      const remembered: LastRoom = {
+        roomId: room.id,
+        publishToken,
+        roomBase,
+        joinUrl: room.joinUrl,
+        startedAt: roomStartedAt || Date.now(),
+        stoppedAt: Date.now(),
+      };
+      saveLastRoom(remembered);
+      lastRoom = remembered;
+    }
     publisher?.stop();
     publisher = null;
     publishState = null;
@@ -313,6 +339,28 @@
     qr = undefined;
     room = null;
     clearSession();
+  }
+
+  // Reopen the most recently stopped room (same id + token). Audience devices
+  // that kept the link/QR reconnect; late joiners get whatever history the DO
+  // still retains. If captioning is live, output tees to it immediately.
+  function restartRoom(): void {
+    const last = lastRoom;
+    if (!last) return;
+    roomError = null;
+    room = { id: last.roomId, joinUrl: last.joinUrl };
+    publishToken = last.publishToken;
+    roomStartedAt = last.startedAt;
+    sessionStartedAt = last.startedAt;
+    qr = { url: last.joinUrl, x: 72, y: 6, size: 24 };
+    publisher?.stop();
+    publisher = new RoomPublisher(
+      roomPublishUrl(last.roomId, last.publishToken, last.roomBase),
+      { onState: (s) => (publishState = s), seed: roomSnapshot },
+    );
+    publisher.start();
+    lastRoom = null;
+    clearLastRoom();
   }
 
   async function downloadQrPng(): Promise<void> {
@@ -416,6 +464,7 @@
     model = saved.model;
     deviceId = saved.deviceId;
     sessionStartedAt = saved.startedAt;
+    roomStartedAt = saved.startedAt;
     publishToken = saved.publishToken;
     for (const seg of saved.finals) store.apply({ type: "final", segment: seg });
     room = { id: saved.roomId, joinUrl: saved.joinUrl };
@@ -910,6 +959,13 @@
       <div class="room-live">
         <div class="room-info">
           <strong>Live room</strong>
+          {#if roomStartedAt}
+            <span class="room-started">
+              started {new Date(roomStartedAt).toLocaleTimeString()} · {fmtAge(
+                buildClock - roomStartedAt,
+              )}
+            </span>
+          {/if}
           <a href={room.joinUrl} target="_blank" rel="noreferrer">{room.joinUrl}</a>
           <div class="room-actions">
             <button onclick={downloadQrPng}>Download QR slide (PNG)</button>
@@ -929,7 +985,16 @@
         </div>
       </div>
     {:else}
-      <button class="start" onclick={startRoom}>Start audience room</button>
+      <div class="room-idle">
+        <button class="start" onclick={startRoom}>Start audience room</button>
+        {#if lastRoom}
+          <button onclick={restartRoom} title="Reopen the same room — audience who kept the link rejoin">
+            Restart last room · started {new Date(
+              lastRoom.startedAt,
+            ).toLocaleTimeString()}
+          </button>
+        {/if}
+      </div>
       {#if roomError}<span class="room-err">{roomError}</span>{/if}
     {/if}
   </section>
@@ -1268,6 +1333,17 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+  .room-started {
+    font-size: 0.8rem;
+    color: #8a97a8;
+    font-variant-numeric: tabular-nums;
+  }
+  .room-idle {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    align-items: center;
   }
   .room-err {
     color: #ff8a8a;

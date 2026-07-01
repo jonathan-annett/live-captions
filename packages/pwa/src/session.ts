@@ -73,3 +73,61 @@ export function clearSession(): void {
     /* ignore */
   }
 }
+
+// --- last stopped room ------------------------------------------------------
+// When the operator stops a room we remember it, so they can reopen the SAME
+// room id/token. The room's Durable Object keeps its token in persistent
+// storage, so reconnecting resumes it (audience who kept the link rejoin; the
+// transcript survives within the 30-min retention, empty after). Offered for a
+// few hours, after which a "restart" would just be a bare empty room.
+
+const LAST_ROOM_KEY = "cg.lastRoom";
+const LAST_ROOM_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
+export interface LastRoom {
+  roomId: string;
+  publishToken: string;
+  roomBase: string;
+  joinUrl: string;
+  /** when the room was originally created */
+  startedAt: number;
+  /** when the operator stopped it */
+  stoppedAt: number;
+}
+
+export function saveLastRoom(r: LastRoom): void {
+  try {
+    localStorage.setItem(LAST_ROOM_KEY, JSON.stringify(r));
+  } catch {
+    /* storage disabled */
+  }
+}
+
+export function loadLastRoom(): LastRoom | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(LAST_ROOM_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw) as LastRoom;
+    if (!r?.roomId || !r.publishToken) return null;
+    if (Date.now() - (r.stoppedAt ?? 0) > LAST_ROOM_MAX_AGE_MS) {
+      clearLastRoom();
+      return null;
+    }
+    return r;
+  } catch {
+    return null;
+  }
+}
+
+export function clearLastRoom(): void {
+  try {
+    localStorage.removeItem(LAST_ROOM_KEY);
+  } catch {
+    /* ignore */
+  }
+}
