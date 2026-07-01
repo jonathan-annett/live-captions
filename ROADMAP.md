@@ -99,6 +99,15 @@ Tiers, building on that one backbone:
   global key — NOT per-room — so a viewer's preference follows them across rooms in
   a multi-room venue (same origin ⇒ shared storage; every `/room?<id>` is same-
   origin) and is auto-applied on join. Reuse the existing `cg.*` look-key pattern.
+- **Admin: room registry + usage stats** (later; not general-use) — a token-gated
+  **admin page** to audit activity and see usage: active rooms, device counts,
+  session start/stop times and durations, rooms-created-over-time. Enabler: a
+  **registry** the rooms write to, since Durable Objects can't be enumerated (no
+  native `list()`; the dashboard only shows aggregate namespace metrics). A single
+  directory DO (or KV/D1 index) that each room registers with on `/r/new` and
+  updates on presence change; the **stale-room reap alarm removes its entry**, so
+  the index stays truthful. Shares the enabler with "Room session management" above
+  and would surface the connected-device count (already emitted) historically.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
