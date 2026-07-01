@@ -75,7 +75,33 @@ Tiers, building on that one backbone:
     *Install* action — which elegantly retires the old "custom repo can't auto-apply" problem.
   - **Umbrella:** this front-runs *Native config screen — model management* and *Model cache:
     persist + portability* below, and is the flagged **next major iteration after v0.2.0-beta**.
-- **Live translation** — per-language rooms (id scheme reserves `:lang`); on-device or cloud MT.
+- **Live translation → per-language rooms (Workers AI)** — the id scheme already reserves
+  `:lang`. Translate **finalized caption text** at the CaptionRoom DO via **Cloudflare
+  Workers AI** (m2m100 / an LLM, co-located with the DO → low latency, no egress) and fan
+  the result out to `:fr`/`:es`/… rooms. **On-mission for cloud AI:** it operates on the
+  *captions* — text that's *already* in the room — so it adds **no** audio-privacy cost
+  (unlike running ASR/refine in the cloud, which stays on-device by design). Optional/tiered
+  and clearly labelled ("captions sent to Cloudflare for translation"). Translate on finals
+  only; the audience viewer / exports honour the same join/render pipeline per language.
+- **AI moderator — semantic error flagging (human-in-the-loop, cloud, text-only)** — an LLM
+  "set of eyes" subscribed to a room's caption feed that flags **context errors Whisper
+  can't**, because Whisper's confidence is *acoustic* while these errors are *semantic* — it
+  decodes a real-but-wrong word *confidently* ("atropine"↔"Atrovent", anatomy homophones,
+  mangled drug names), so the existing low-confidence highlight never catches them. The two
+  signals are **orthogonal**: acoustic uncertainty (Whisper) + semantic implausibility (LLM).
+  Design: (1) **advisory only** — it *suggests* into the existing correction UI
+  ([[correction-ui-tap-transferable]] `Corrections.svelte`), a human accepts/rejects, or it
+  counts as one vote in the trusted-viewer quorum ([[moderator-consensus-correction]]); never
+  auto-commits (LLMs hallucinate — critical for medical/legal). (2) **Event profile primes
+  it** — reuse the **custom dictionary** (drug/speaker/jargon terms) + a domain hint ("this is
+  a cardiology conference; agenda/speakers…") so it applies real anatomy/pharma knowledge.
+  (3) **Windowed context** — feed a rolling transcript window (not single segments) so it
+  judges plausibility from discourse (ties to the longer-context refinement idea). (4)
+  **Text-only, already-cloud** — watches the room feed, so no new audio-privacy surface;
+  runs next to the DO via Workers AI, or a stronger model via AI Gateway for hard domain
+  reasoning (cost/latency vs quality, tiered). Batched on finals, throttled. A true *agent*
+  form (Cloudflare Agents SDK on a DO — persistent per-room memory of accepted corrections /
+  speaker style) is the richer v3+ version.
 - **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency
   tuning; **speech-gated input gain** (normalize detected-speech to a healthy level *before* the
   model — gated to speech so gaps/noise are never boosted into hallucinations; helps quiet
