@@ -30,6 +30,17 @@
     { label: "Monospace", value: "'SF Mono', Consolas, ui-monospace, monospace" },
   ];
   const LS_LOOK = "cg.look";
+  // Mic is persisted by NAME (device indices can shift between runs). null saved
+  // = adopt the server's current device; "" = explicit system default.
+  const LS_DEVICE = "cg.inputDevice";
+  const savedDeviceName = (() => {
+    try {
+      return localStorage.getItem(LS_DEVICE);
+    } catch {
+      return null;
+    }
+  })();
+  let deviceApplied = false; // one-shot: re-apply the saved mic on the first list
   const lsGet = (k: string): string | null => {
     try {
       return localStorage.getItem(k);
@@ -222,7 +233,26 @@
         // not a caption message, so intercept before the store.
         if (msg.type === "audioDevices") {
           devices = msg.devices;
-          currentDevice = msg.current ?? null;
+          // Re-apply the operator's saved mic once (match by name — indices can
+          // shift between runs). null saved = adopt the server's current device.
+          if (!deviceApplied && savedDeviceName != null) {
+            deviceApplied = true;
+            if (savedDeviceName === "") {
+              currentDevice = null;
+              if (msg.current != null) socket?.send({ type: "setInputDevice", device: null });
+            } else {
+              const match = msg.devices.find((d) => d.name === savedDeviceName);
+              if (match) {
+                currentDevice = match.index;
+                if (msg.current !== match.index)
+                  socket?.send({ type: "setInputDevice", device: match.index });
+              } else {
+                currentDevice = msg.current ?? null; // saved device is gone
+              }
+            }
+          } else {
+            currentDevice = msg.current ?? null;
+          }
           return;
         }
         store.apply(msg);
@@ -269,6 +299,9 @@
   function selectDevice(value: string): void {
     const device = value === "" ? null : Number(value);
     currentDevice = device;
+    // Persist by name so the choice survives an index reshuffle next launch.
+    const name = device == null ? "" : (devices.find((d) => d.index === device)?.name ?? "");
+    lsSet(LS_DEVICE, name);
     socket?.send({ type: "setInputDevice", device });
   }
 

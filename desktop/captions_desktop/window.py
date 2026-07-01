@@ -14,7 +14,27 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from typing import Optional
+
+
+def _webview_storage_dir() -> str:
+    """A stable per-user dir so the native WebKit windows PERSIST localStorage
+    (the operator's look / model / mic / QR prefs) across restarts.
+
+    pywebview defaults to ``private_mode=True`` — an ephemeral WebKit data store
+    that is wiped when the window closes, so every launch snapped those prefs back
+    to defaults. Pointing ``storage_path`` at a stable dir (with private mode off)
+    keeps them."""
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif os.name == "nt":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    d = base / "CaptionGuru" / "webview"
+    d.mkdir(parents=True, exist_ok=True)
+    return str(d)
 
 
 # ---------------------------------------------------------------------------
@@ -88,7 +108,10 @@ def run_webview(
             height=820,
             min_size=(720, 560),
         )
-    webview.start(debug=devtools)
+    # private_mode=False + a stable storage_path so the panel's localStorage
+    # prefs (look / model / mic / QR) survive a restart — the default private
+    # mode wiped them every launch.
+    webview.start(debug=devtools, private_mode=False, storage_path=_webview_storage_dir())
 
 
 def webview_available() -> bool:
