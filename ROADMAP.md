@@ -95,6 +95,10 @@ Tiers, building on that one backbone:
   DisplayConfig (which drives the shared projection). A small settings/gear panel in
   `Viewer.svelte`; purely client-side (no protocol change), so a low-vision viewer
   can crank up size/contrast without affecting anyone else or the on-air output.
+  **Persist at origin scope** (caption.guru localStorage/IndexedDB) under a single
+  global key — NOT per-room — so a viewer's preference follows them across rooms in
+  a multi-room venue (same origin ⇒ shared storage; every `/room?<id>` is same-
+  origin) and is auto-applied on join. Reuse the existing `cg.*` look-key pattern.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
