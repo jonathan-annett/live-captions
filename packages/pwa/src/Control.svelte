@@ -169,6 +169,7 @@
   // Show the live (un-finalized) "bleeding edge" hypothesis. Off = lower latency
   // captions but fewer mid-utterance errors on screen.
   let showLive = $state<boolean>(savedLook.showLive !== false);
+  let uppercase = $state<boolean>(savedLook.uppercase === true);
   let qr = $state<DisplayConfig["qr"]>(undefined);
 
   // Derived from its parts (never mutated in place) so updating it can't loop.
@@ -185,6 +186,7 @@
       orientation,
       textAlign,
       showPartial: showLive,
+      uppercase,
       ...(boxFill ? { boxColor, ...(boxRadius ? { boxRadius } : {}) } : {}),
       ...(boxEnabled
         ? { region: { x: boxX, y: boxY, width: boxW, height: effectiveBoxH } }
@@ -217,6 +219,7 @@
         autoHeight,
         boxLines,
         showLive,
+        uppercase,
       }),
     );
   });
@@ -328,6 +331,16 @@
     const prior = store.finals.find((s) => s.id === seg.id);
     if (prior) undoStack = [...undoStack, $state.snapshot(prior)];
     emitFinal(seg);
+  }
+
+  // Wipe the transcript everywhere — operator preview, on-air display, and the
+  // audience room — via the shared clear message (all stores + the DO handle it).
+  function clearAll(): void {
+    const msg: ServerMessage = { type: "clear" };
+    store.apply(msg);
+    configChannel.postMessage(msg);
+    publisher?.publish(msg);
+    undoStack = [];
   }
 
   function undoCorrection(): void {
@@ -620,6 +633,11 @@
     </label>
 
     <label class="check">
+      <input type="checkbox" bind:checked={uppercase} />
+      Uppercase
+    </label>
+
+    <label class="check">
       <input type="checkbox" bind:checked={boxEnabled} />
       Fixed caption box (clips + scrolls within a set size)
     </label>
@@ -677,6 +695,12 @@
         <button class="start" onclick={start}>Start captioning</button>
       {/if}
       <button onclick={openDisplay}>Open display ↗</button>
+      <button
+        onclick={clearAll}
+        disabled={!store.finals.length && !store.partial}
+      >
+        Clear
+      </button>
     </div>
   </section>
 

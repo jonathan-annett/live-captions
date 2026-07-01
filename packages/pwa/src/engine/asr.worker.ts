@@ -50,8 +50,11 @@ const loadPipeline = pipeline as unknown as (
 const post = (msg: WorkerEvent, transfer: Transferable[] = []) =>
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer);
 
-async function load(model: string): Promise<void> {
-  multilingual = !model.endsWith(".en");
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** One full load attempt: try each device in turn; return on the first that
+ *  loads, throw the last error if none do. */
+async function loadOnce(model: string): Promise<void> {
   let lastErr: unknown;
   for (const device of DEVICES) {
     // Aggregate per-file download progress into a single loaded/total.
@@ -86,7 +89,44 @@ async function load(model: string): Promise<void> {
       lastErr = err;
     }
   }
-  post({ type: "error", message: `Failed to load model: ${String(lastErr)}` });
+  throw lastErr;
+}
+
+// Retry the whole load with capped exponential backoff — venue wifi is flaky and
+// a model is tens of MB. transformers.js caches fetched files in browser Cache
+// Storage, so a retry effectively resumes: already-downloaded files load from
+// cache, only the interrupted fetch repeats. A retry only fires when EVERY device
+// failed the round (an unsupported device just falls through fast, as before).
+const LOAD_ATTEMPTS = 4;
+const LOAD_BASE_DELAY_MS = 1000;
+const LOAD_MAX_DELAY_MS = 15_000;
+
+async function load(model: string): Promise<void> {
+  multilingual = !model.endsWith(".en");
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= LOAD_ATTEMPTS; attempt++) {
+    try {
+      await loadOnce(model);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < LOAD_ATTEMPTS) {
+        const delay = Math.min(
+          LOAD_BASE_DELAY_MS * 2 ** (attempt - 1),
+          LOAD_MAX_DELAY_MS,
+        );
+        post({
+          type: "loading",
+          message: `Load failed — retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${LOAD_ATTEMPTS})…`,
+        });
+        await sleep(delay);
+      }
+    }
+  }
+  post({
+    type: "error",
+    message: `Failed to load model after ${LOAD_ATTEMPTS} attempts: ${String(lastErr)}`,
+  });
 }
 
 /** transformers.js chunk shape when `return_timestamps: "word"`. */
