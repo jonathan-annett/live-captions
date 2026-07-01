@@ -44,7 +44,26 @@
 
   // In a fixed box we render a deeper window (bottom-anchored, clipped) so older
   // text scrolls off the top; full-frame keeps the bounded rolling lines.
-  const visibleLines = $derived(region ? store.recentLines : store.lines);
+  //
+  // Render is COALESCED to one animation frame. Applying a message is cheap, but
+  // the formatted render (joinSegments + fullscreen/high-res layout) is not — on a
+  // loaded box or a projector/OBS output, rendering every partial synchronously
+  // falls behind the message stream and the delay ACCUMULATES (captions and config
+  // both arrive minutes late). Recomputing at most once per frame, from the latest
+  // state, keeps the main thread free to drain the socket and always shows the
+  // freshest captions with no backlog. rAF self-throttles to what the display can
+  // actually paint, so a slow output degrades to a lower update rate, not lag.
+  let visibleLines = $state<{ key: string; text: string; partial: boolean }[]>([]);
+  let framePending = false;
+  $effect(() => {
+    void store.version; // re-run on every applied message
+    if (framePending) return;
+    framePending = true;
+    requestAnimationFrame(() => {
+      framePending = false;
+      visibleLines = region ? store.recentLines : store.lines;
+    });
+  });
 
   // Standalone operator-toggled QR overlay — renders in ANY background mode
   // (solid/transparent/chroma) whenever the operator enables it.

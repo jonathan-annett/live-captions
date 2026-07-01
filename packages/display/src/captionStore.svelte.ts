@@ -24,8 +24,14 @@ export class CaptionStore {
   partial = $state<CaptionSegment | null>(null);
   config = $state<DisplayConfig>(DEFAULT_DISPLAY_CONFIG);
   status = $state<EngineStatus | null>(null);
+  /** Bumped on every applied message. A render can subscribe to just this to
+   *  coalesce heavy work (rAF) instead of re-deriving per message — see App.svelte.
+   *  Applying a message stays cheap (state writes only); the costly joinSegments +
+   *  fullscreen layout is deferred so the socket never backs up on a slow display. */
+  version = $state(0);
 
   apply = (msg: ServerMessage): void => {
+    this.version++;
     switch (msg.type) {
       case "partial":
         // Ignore blank/whitespace partials so they can't wipe a good line.
