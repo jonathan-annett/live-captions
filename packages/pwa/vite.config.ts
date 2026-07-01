@@ -6,6 +6,9 @@ const root = import.meta.dirname;
 
 export default defineConfig({
   plugins: [svelte()],
+  // Build timestamp (epoch ms) baked in at build time, surfaced in the operator
+  // header so a browser refresh confirms which deploy is live (see Control.svelte).
+  define: { __BUILD_TIME__: JSON.stringify(Date.now()) },
   // Relative base so the app works at the Pages root or any subpath.
   base: "./",
   // Don't pre-bundle the workspace Svelte lib or the (large) ASR runtime.

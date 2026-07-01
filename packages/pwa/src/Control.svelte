@@ -478,6 +478,30 @@
     );
   }
 
+  // --- build stamp ----------------------------------------------------------
+  // Baked in at build time (vite `define`), shown in the header so a refresh
+  // confirms which deploy is live. `buildClock` ticks so the relative age stays
+  // current without a reload.
+  const buildTime = __BUILD_TIME__;
+  const buildAt = new Date(buildTime);
+  let buildClock = $state(Date.now());
+  $effect(() => {
+    const id = setInterval(() => (buildClock = Date.now()), 30_000);
+    return () => clearInterval(id);
+  });
+  function fmtAge(ms: number): string {
+    const s = Math.max(0, Math.round(ms / 1000));
+    if (s < 60) return `${s}s ago`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h / 24)}d ago`;
+  }
+  const buildLabel = $derived(
+    `built ${buildAt.toLocaleTimeString()} · ${fmtAge(buildClock - buildTime)}`,
+  );
+
   const statusLabel = $derived(
     store.status.state === "listening"
       ? `listening · ${store.status.device ?? ""} · ${store.status.model?.split("/").pop() ?? ""}`
@@ -488,6 +512,9 @@
 <main>
   <header>
     <h1>{appName}</h1>
+    <span class="pill build" title="Build baked in at deploy — {buildAt.toLocaleString()}">
+      {buildLabel}
+    </span>
     <span class="pill {store.status.state}">{statusLabel}</span>
     {#if publishUrl || room}
       <span class="pill" class:listening={publishState === "open"}>
@@ -799,6 +826,12 @@
     background: #222;
     color: #bbb;
     white-space: nowrap;
+  }
+  .pill.build {
+    background: #14181f;
+    color: #7f8ca0;
+    font-variant-numeric: tabular-nums;
+    cursor: default;
   }
   .pill.listening {
     background: #10391f;
