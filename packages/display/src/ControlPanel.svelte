@@ -305,6 +305,45 @@
     URL.revokeObjectURL(url);
   }
 
+  // Turn the room join URL into an OBS Browser Source link (the on-air display
+  // page subscribed to this room). The join URL comes in two forms:
+  //   <base>/room?<id>                    (same-origin)
+  //   <base>/room?room=<id>&base=<origin> (cross-origin room ws)
+  function obsLinkFromJoin(join: string): string | null {
+    try {
+      const j = new URL(join);
+      let id: string | null;
+      let base: string | null = null;
+      if (j.searchParams.has("room")) {
+        id = j.searchParams.get("room");
+        base = j.searchParams.get("base");
+      } else {
+        id = j.search.slice(1); // "?<id>" → "<id>"
+      }
+      if (!id) return null;
+      const u = new URL("display.html", j); // display.html beside /room on the same host
+      u.searchParams.set("source", "room");
+      u.searchParams.set("room", id);
+      if (base) u.searchParams.set("base", base);
+      return u.href;
+    } catch {
+      return null;
+    }
+  }
+
+  let obsCopied = $state(false);
+  async function copyObsLink(): Promise<void> {
+    const link = joinUrl ? obsLinkFromJoin(joinUrl) : null;
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      obsCopied = true;
+      setTimeout(() => (obsCopied = false), 1500);
+    } catch {
+      obsCopied = false;
+    }
+  }
+
   // --- operator corrections -------------------------------------------------
   // Each edit computes a corrected (locked) segment via the shared pure logic and
   // sends it as `editSegment`; the server upserts it into the hub (lock-aware) and
@@ -512,6 +551,9 @@
         <div class="join-qr">{@html qrSvg(joinUrl)}</div>
         <div class="join-meta">
           <a href={joinUrl} target="_blank" rel="noreferrer">{joinUrl}</a>
+          <button onclick={copyObsLink} title="Copy the OBS Browser Source URL for this room">
+            {obsCopied ? "OBS link copied!" : "Copy OBS link"}
+          </button>
           <button onclick={downloadSlide}>Download QR slide (PNG)</button>
         </div>
       </div>
