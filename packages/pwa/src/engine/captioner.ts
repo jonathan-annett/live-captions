@@ -135,6 +135,23 @@ export class Captioner {
     source.connect(this.node);
     // Connect to destination so the worklet is pulled; it outputs silence.
     this.node.connect(this.audioCtx.destination);
+    // A context created outside a user gesture starts suspended; resume so the
+    // worklet actually pulls audio. No-op when already running (Start button).
+    await this.audioCtx.resume().catch(() => {});
+  }
+
+  /** True once the audio graph is actually running (context resumed). */
+  isCapturing(): boolean {
+    return this.audioCtx?.state === "running";
+  }
+
+  /** Resume a suspended AudioContext — used by session recovery, where the
+   *  browser blocks autoplay until a user gesture. Must be called from within a
+   *  gesture handler. Returns whether the context is now running. */
+  async resume(): Promise<boolean> {
+    if (!this.audioCtx) return false;
+    await this.audioCtx.resume().catch(() => {});
+    return this.audioCtx.state === "running";
   }
 
   stop(): void {

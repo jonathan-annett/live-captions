@@ -14,11 +14,18 @@
     qrSvg,
     RoomPublisher,
     roomPublishUrl,
+    RoomSource,
     type ConnectionState,
   } from "@captions/display";
   import { Captioner } from "./engine/captioner.js";
   import Corrections from "./Corrections.svelte";
   import { UiStore } from "./uiStore.svelte.js";
+  import {
+    clearSession,
+    loadSession,
+    saveSession,
+    type PersistedSession,
+  } from "./session.js";
 
   const CHANNEL = "captions";
   // `size` is the approximate one-time download (cached after first use), shown
@@ -93,6 +100,15 @@
   let publishState = $state<ConnectionState | null>(null);
   let room = $state<{ id: string; joinUrl: string } | null>(null);
   let roomError = $state<string | null>(null);
+  // Session recovery: while transcribing with a room open we persist enough to
+  // rebuild the session after a refresh. `recovering` (set on load from a fresh
+  // record) drives the full-screen resume mask; the room + transcript are
+  // restored immediately, and a gesture re-arms the mic (browser autoplay rule).
+  let recovering = $state<PersistedSession | null>(null);
+  let publishToken: string | null = null; // remembered for the persist record
+  let resuming = false;
+  let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let sessionStartedAt = 0;
 
   // The QR/join target is the short audience page /room?<id>. When the room's
   // WebSocket lives on a different origin than this page, fall back to the
@@ -273,6 +289,8 @@
       const r = await res.json();
       const joinUrl = joinUrlFor(r.id);
       room = { id: r.id, joinUrl };
+      publishToken = r.publishToken;
+      sessionStartedAt = Date.now();
       publisher?.stop();
       publisher = new RoomPublisher(r.publishUrl, {
         onState: (s) => (publishState = s),
@@ -291,6 +309,7 @@
     publisher?.stop();
     publisher = null;
     publishState = null;
+    publishToken = null;
     qr = undefined;
     room = null;
   }
@@ -304,6 +323,139 @@
     a.download = "caption-room-qr.png";
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // --- session recovery -----------------------------------------------------
+  // Persist a recovery record while transcribing with a room open; debounced so
+  // a burst of finals doesn't thrash localStorage. Cleared the moment the
+  // session isn't live (explicit Stop / Stop room), so a clean stop never offers
+  // recovery.
+  $effect(() => {
+    const live = running && !!room && !!publishToken;
+    const count = store.finals.length; // reactive dep: re-run as transcript grows
+    void count;
+    if (!live) {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      // While a recovery is pending (mask up, mic not yet re-armed) `running` is
+      // false — don't wipe the record, so it survives a second refresh until the
+      // operator actually resumes.
+      if (recovering) return;
+      clearSession();
+      return;
+    }
+    if (saveTimer) return; // a write is already scheduled
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      if (running && room && publishToken) {
+        saveSession({
+          roomId: room.id,
+          publishToken,
+          roomBase,
+          joinUrl: room.joinUrl,
+          model,
+          deviceId,
+          startedAt: sessionStartedAt || Date.now(),
+          updatedAt: Date.now(),
+          finals: $state.snapshot(store.finals),
+        });
+      }
+    }, 1500);
+  });
+
+  // Warn before leaving while live — an accidental tab close/refresh drops the
+  // mic (recovery re-arms it, but the heads-up avoids surprise).
+  $effect(() => {
+    if (!running) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  });
+
+  // While the resume mask is up, any gesture attempts to re-arm the mic. We
+  // listen broadly (a passive mousemove resumes audio where the browser allows);
+  // resumeGesture() verifies the context actually started and only drops the
+  // mask then, so a discrete click/keypress remains the guaranteed fallback.
+  $effect(() => {
+    if (!recovering) return;
+    const events = [
+      "pointermove",
+      "mousemove",
+      "pointerdown",
+      "click",
+      "keydown",
+      "touchstart",
+    ];
+    const handler = (): void => void resumeGesture();
+    for (const e of events) window.addEventListener(e, handler, { passive: true });
+    return () => {
+      for (const e of events) window.removeEventListener(e, handler);
+    };
+  });
+
+  // Rebuild a live session from a persisted record: restore engine choice +
+  // transcript, reconnect the same room (audience never dropped — the DO kept
+  // the log + token), pull the DO's canonical history to reconcile, then raise
+  // the resume mask.
+  function recoverSession(saved: PersistedSession): void {
+    model = saved.model;
+    deviceId = saved.deviceId;
+    sessionStartedAt = saved.startedAt;
+    publishToken = saved.publishToken;
+    for (const seg of saved.finals) store.apply({ type: "final", segment: seg });
+    room = { id: saved.roomId, joinUrl: saved.joinUrl };
+    qr = { url: saved.joinUrl, x: 72, y: 6, size: 24 };
+    publisher = new RoomPublisher(
+      roomPublishUrl(saved.roomId, saved.publishToken, saved.roomBase),
+      { onState: (s) => (publishState = s), seed: roomSnapshot },
+    );
+    publisher.start();
+    reconcileFromRoom(saved.roomId, saved.roomBase);
+    recovering = saved;
+  }
+
+  // One-shot subscriber to pull the room's canonical history (covers a transcript
+  // that outgrew localStorage or a cross-device recovery); upsert-by-id merges it
+  // with the locally-restored finals. Closes on first history or after a timeout.
+  function reconcileFromRoom(roomId: string, base: string): void {
+    let src: RoomSource | null = RoomSource.forRoom(roomId, base);
+    let closed = false;
+    const done = (): void => {
+      if (closed) return;
+      closed = true;
+      src?.disconnect();
+      src = null;
+    };
+    src.connect((msg) => {
+      if (msg.type === "history") {
+        for (const seg of msg.segments) store.apply({ type: "final", segment: seg });
+        done();
+      }
+    });
+    setTimeout(done, 5000);
+  }
+
+  // A recovery gesture: build the capture pipeline (once) and resume the audio
+  // context. A passive gesture may not satisfy autoplay policy — resume() returns
+  // false — so we keep the mask until a gesture actually starts the context.
+  async function resumeGesture(): Promise<void> {
+    if (!recovering || resuming) return;
+    resuming = true;
+    try {
+      if (!captioner || !running) {
+        captioner = null;
+        await start();
+      }
+      const ok = (await captioner?.resume()) ?? false;
+      if (ok) recovering = null;
+    } finally {
+      resuming = false;
+    }
   }
 
   // Single funnel for the captioner's output: mirror to the UI, and (when
@@ -427,9 +579,14 @@
   }
 
   onMount(async () => {
-    // Legacy/power-user path: a publish target given in the URL starts relaying
-    // immediately (independent of the "Start room" button).
-    if (publishUrl) {
+    // Recover a live session after a refresh (room + transcript now, mic on the
+    // first gesture). Takes precedence over the legacy URL-publish path.
+    const saved = loadSession();
+    if (saved) {
+      recoverSession(saved);
+    } else if (publishUrl) {
+      // Legacy/power-user path: a publish target given in the URL starts relaying
+      // immediately (independent of the "Start room" button).
       publisher = new RoomPublisher(publishUrl, {
         onState: (s) => (publishState = s),
         seed: roomSnapshot,
@@ -521,6 +678,22 @@
       : (store.status.message ?? store.status.state),
   );
 </script>
+
+{#if recovering}
+  <div class="resume-mask">
+    <div class="resume-card">
+      <h2>Recovering your session…</h2>
+      <p>
+        Your audience room and transcript are back — the audience never lost
+        connection. Move the mouse, click, or press any key to re-enable the
+        microphone and continue captioning.
+      </p>
+      <button class="start" onclick={() => void resumeGesture()}>
+        Resume captioning
+      </button>
+    </div>
+  </div>
+{/if}
 
 <main>
   <header>
@@ -1071,5 +1244,33 @@
   .room-err {
     color: #ff8a8a;
     font-size: 0.85rem;
+  }
+  .resume-mask {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: rgba(6, 8, 12, 0.92);
+    backdrop-filter: blur(3px);
+  }
+  .resume-card {
+    max-width: 30rem;
+    text-align: center;
+    background: #12161d;
+    border: 1px solid #263041;
+    border-radius: 12px;
+    padding: 2rem;
+  }
+  .resume-card h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.3rem;
+  }
+  .resume-card p {
+    color: #9fb0c4;
+    line-height: 1.5;
+    margin: 0 0 1.25rem;
   }
 </style>
