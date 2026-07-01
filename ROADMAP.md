@@ -190,6 +190,15 @@ Tiers, building on that one backbone:
   updates on presence change; the **stale-room reap alarm removes its entry**, so
   the index stays truthful. Shares the enabler with "Room session management" above
   and would surface the connected-device count (already emitted) historically.
+- **Room DO efficiency (LOW priority)** — cost/scale trims for the audience-room
+  Durable Object, none needed until thousands of concurrent rooms (see
+  `docs/scaling-cost.md` for the full model). (1) write `idleSince` only on the
+  active→empty transition, not every 60s alarm tick (rewrites the same value now);
+  (2) slower/lazy prune (`PRUNE_INTERVAL_MS` 60s → ~5 min) so `setAlarm` writes less
+  often; (3) **throttle the partials relayed to the cloud room** — the on-air local
+  display needs every partial, but the audience could get finals + occasional
+  partials (cuts the incoming-WS-message meter + bandwidth). NOT a "flag cache DO"
+  (it evicts too; `state.storage` is already the durable cache — see the doc).
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Captioner → OBS browser link** — a way for the browser-based captioner (PWA) to
