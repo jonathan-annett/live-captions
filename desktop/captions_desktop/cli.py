@@ -104,6 +104,11 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         action="store_true",
         help="also open the operator control panel (/control) in a second native window",
     )
+    serve.add_argument(
+        "--devtools",
+        action="store_true",
+        help="enable the WebKit inspector in the native windows (right-click → Inspect Element)",
+    )
     serve.add_argument("--kiosk", action="store_true", help="use Chrome kiosk fallback")
     serve.add_argument("--no-open", action="store_true", help="server only, no window")
     serve.add_argument("--list-monitors", action="store_true", help="list monitors + exit")
@@ -271,6 +276,7 @@ def _serve(args: argparse.Namespace) -> None:
                 monitor=args.monitor,
                 transparent=transparent,
                 control_url=f"{base}/control" if args.control_window else None,
+                devtools=args.devtools,
             )
     finally:
         server.should_exit = True
