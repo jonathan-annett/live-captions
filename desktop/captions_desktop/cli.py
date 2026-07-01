@@ -37,10 +37,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve.add_argument(
         "--refine",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="two-tier refinement (ON by default): a background pass re-decodes "
+        default=False,
+        help="two-tier refinement (OFF by default): a background pass re-decodes "
         "each utterance at higher quality (beam + long-form context) and replaces "
-        "it in place. Compute-heavy — use --no-refine to disable.",
+        "it in place. Compute-heavy (a 2nd model on the same GPU) — enable with "
+        "--refine only on a capable box; it starves live captions on low-end / "
+        "single-GPU machines.",
     )
     serve.add_argument(
         "--refine-model",

@@ -51,27 +51,52 @@
   const engineState = $derived(store.status?.state ?? "idle");
 
   // --- look controls (mirror the PWA) ---------------------------------------
-  let bgKind = $state<Background["kind"]>(DEFAULT_DISPLAY_CONFIG.background.kind);
-  let bgColor = $state("#00b140");
-  let textColor = $state(DEFAULT_DISPLAY_CONFIG.color);
-  let fontFamily = $state(DEFAULT_DISPLAY_CONFIG.fontFamily);
-  let fontSize = $state(DEFAULT_DISPLAY_CONFIG.fontSize);
-  let fontWeight = $state(DEFAULT_DISPLAY_CONFIG.fontWeight);
-  let orientation = $state<DisplayConfig["orientation"]>(DEFAULT_DISPLAY_CONFIG.orientation);
-  let textAlign = $state<DisplayConfig["textAlign"]>(DEFAULT_DISPLAY_CONFIG.textAlign);
-  let uppercase = $state(DEFAULT_DISPLAY_CONFIG.uppercase);
-  let showLive = $state(DEFAULT_DISPLAY_CONFIG.showPartial);
-  let boxFill = $state(false);
-  let boxColor = $state("#000000");
-  let boxRadius = $state(0);
-  let boxEnabled = $state(false);
-  let boxX = $state(6);
-  let boxY = $state(68);
-  let boxW = $state(88);
-  let boxH = $state(26);
+  // Restore the operator's persisted look (write-through localStorage, saved by
+  // the effect below). If present it's the source of truth — we push it on connect
+  // instead of adopting the server's config, so panel look survives a restart
+  // (the desktop server resets to CLI defaults each launch). Absent → adopt server.
+  const savedLook: Partial<DisplayConfig> | null = (() => {
+    const raw = lsGet(LS_LOOK);
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as Partial<DisplayConfig>;
+    } catch {
+      return null;
+    }
+  })();
+
+  let bgKind = $state<Background["kind"]>(
+    savedLook?.background?.kind ?? DEFAULT_DISPLAY_CONFIG.background.kind,
+  );
+  let bgColor = $state(
+    savedLook?.background && savedLook.background.kind !== "transparent"
+      ? savedLook.background.color
+      : "#00b140",
+  );
+  let textColor = $state(savedLook?.color ?? DEFAULT_DISPLAY_CONFIG.color);
+  let fontFamily = $state(savedLook?.fontFamily ?? DEFAULT_DISPLAY_CONFIG.fontFamily);
+  let fontSize = $state(savedLook?.fontSize ?? DEFAULT_DISPLAY_CONFIG.fontSize);
+  let fontWeight = $state(savedLook?.fontWeight ?? DEFAULT_DISPLAY_CONFIG.fontWeight);
+  let orientation = $state<DisplayConfig["orientation"]>(
+    savedLook?.orientation ?? DEFAULT_DISPLAY_CONFIG.orientation,
+  );
+  let textAlign = $state<DisplayConfig["textAlign"]>(
+    savedLook?.textAlign ?? DEFAULT_DISPLAY_CONFIG.textAlign,
+  );
+  let uppercase = $state(savedLook?.uppercase ?? DEFAULT_DISPLAY_CONFIG.uppercase);
+  let showLive = $state(savedLook?.showPartial ?? DEFAULT_DISPLAY_CONFIG.showPartial);
+  let boxFill = $state(savedLook?.boxColor != null);
+  let boxColor = $state(savedLook?.boxColor ?? "#000000");
+  let boxRadius = $state(savedLook?.boxRadius ?? 0);
+  let boxEnabled = $state(savedLook?.region != null);
+  let boxX = $state(savedLook?.region?.x ?? 6);
+  let boxY = $state(savedLook?.region?.y ?? 68);
+  let boxW = $state(savedLook?.region?.width ?? 88);
+  let boxH = $state(savedLook?.region?.height ?? 26);
   // Auto height: derive the box height from #lines × font size (mirror the PWA),
-  // so the operator sizes by lines, not raw %.
-  let autoHeight = $state(true);
+  // so the operator sizes by lines, not raw %. A saved box carries an explicit
+  // height → restore it exactly (auto off); otherwise default on.
+  let autoHeight = $state(savedLook?.region == null);
   let boxLines = $state(2);
   const computedBoxH = $derived(
     Math.min(100, Math.max(5, Math.round(fontSize * (1.3 * boxLines + 0.8)))),
@@ -101,7 +126,9 @@
   const CUSTOM = "__custom";
   const OFF = ""; // refine disabled (live-only)
   const _savedLive = lsGet("cg.model") ?? "small.en";
-  const _savedRefine = lsGet("cg.refineModel") ?? "large-v3";
+  // Refine defaults OFF (matches the server default) — it's a power feature that
+  // starves live on low-end/single-GPU boxes; opt in per machine.
+  const _savedRefine = lsGet("cg.refineModel") ?? OFF;
   let liveModel = $state(_savedLive);
   let refineModel = $state(_savedRefine);
   // Track "custom repo" mode per field so a known→custom switch doesn't flicker.
@@ -167,8 +194,13 @@
       boxW = c.region.width;
       boxH = c.region.height;
     }
-    // Adopt the server's join-QR overlay (if a room is already live) so the panel
-    // reflects it instead of clobbering it with panel defaults.
+    adoptQr(c);
+  }
+
+  // Adopt the server's join-QR overlay (if a room is already live) so the panel
+  // reflects it instead of clobbering it with panel defaults. Adopted even when we
+  // keep the operator's saved look — the room, not the panel, owns the join url.
+  function adoptQr(c: DisplayConfig): void {
     if (c.qr) {
       qrEnabled = c.qr.enabled;
       qrX = c.qr.x;
@@ -194,10 +226,20 @@
           return;
         }
         store.apply(msg);
-        // Adopt the server's look once, from its first config snapshot.
+        // On the first config snapshot: if the operator has a saved look, it wins —
+        // adopt only the server-owned qr, then the look effect pushes our look to
+        // the server (so a restart restores it). No saved look → adopt the server's
+        // config (honours CLI flags on a fresh install).
         if (msg.type === "config" && !synced) {
           synced = true;
-          adoptConfig(msg.config);
+          if (savedLook) {
+            adoptQr(msg.config);
+            // Push the restored look to the server/display now (synced isn't a
+            // reactive dep, so the look effect won't fire on its own here).
+            socket?.send({ type: "setConfig", config: configPatch });
+          } else {
+            adoptConfig(msg.config);
+          }
           socket?.send({ type: "requestDevices" }); // populate the mic picker
         }
       },

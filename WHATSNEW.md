@@ -56,8 +56,9 @@ runners are deprecated.
   swallowing it.
 
 ### Changed
-- Default `serve` = `small.en` live + `large-v3` refine (use `--no-refine` /
-  Refine = Off on low-memory / single-GPU machines).
+- Default `serve` = `small.en` live, **refine OFF** by default — two-tier refine
+  is a power feature that starves live captions on low-end / single-GPU boxes, so
+  enable it explicitly with `--refine` (or Refine in the panel) on a capable machine.
 
 ## v0.1.0 — 2026-06-29
 
