@@ -10,6 +10,7 @@ class FakeWS {
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  onmessage: ((ev: { data: string }) => void) | null = null;
   sent: string[] = [];
   constructor(public url: string) {
     FakeWS.instances.push(this);
@@ -24,6 +25,9 @@ class FakeWS {
   open(): void {
     this.readyState = FakeWS.OPEN;
     this.onopen?.();
+  }
+  receive(data: string): void {
+    this.onmessage?.({ data });
   }
 }
 
@@ -71,6 +75,18 @@ describe("RoomPublisher re-seed", () => {
     vi.advanceTimersByTime(600);
     FakeWS.instances.at(-1)!.open(); // the reconnected socket
     expect(seed).toHaveBeenCalledTimes(2);
+  });
+
+  it("delivers parsed inbound messages (e.g. presence) to onMessage", () => {
+    useFakeWs();
+    const seen: ServerMessage[] = [];
+    const pub = new RoomPublisher("wss://x", { onMessage: (m) => seen.push(m) });
+    pub.start();
+    const ws = FakeWS.instances.at(-1)!;
+    ws.open();
+    ws.receive(JSON.stringify({ type: "presence", count: 4 }));
+    ws.receive("not json"); // ignored, not forwarded
+    expect(seen).toEqual([{ type: "presence", count: 4 }]);
   });
 
   it("still accepts a bare onState callback (back-compat)", () => {

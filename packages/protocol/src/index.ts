@@ -22,8 +22,9 @@ export * from "./suggest.js";
  *  v3: CaptionSegment gains `joinNext` (operator line-merge control).
  *  v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
  *  v5: `setModel` client message (desktop live/refine model hot-swap).
- *  v6: `editSegment` client message (operator correction over the control WS). */
-export const PROTOCOL_VERSION = 6;
+ *  v6: `editSegment` client message (operator correction over the control WS).
+ *  v7: `presence` server message (audience-room connected-device count). */
+export const PROTOCOL_VERSION = 7;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -401,6 +402,12 @@ export const HistoryMessageSchema = z.object({
   type: z.literal("history"),
   segments: z.array(CaptionSegmentSchema),
 });
+/** Audience-room presence: how many subscriber devices are currently connected.
+ *  Emitted by the CaptionRoom DO on every connect/disconnect. */
+export const PresenceMessageSchema = z.object({
+  type: z.literal("presence"),
+  count: z.number().int().nonnegative(),
+});
 
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   PartialMessageSchema,
@@ -409,6 +416,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   ConfigMessageSchema,
   StatusMessageSchema,
   HistoryMessageSchema,
+  PresenceMessageSchema,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 

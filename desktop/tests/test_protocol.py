@@ -13,6 +13,7 @@ from captions_desktop.protocol import (
     DisplayConfig,
     EditSegmentMessage,
     FinalMessage,
+    PresenceMessage,
     SetModelMessage,
     Word,
     dump_message,
@@ -51,6 +52,18 @@ def test_set_model_message_parses_camelcase():
     assert isinstance(msg, SetModelMessage)
     assert msg.model == "small.en"
     assert msg.refine_model == "large-v3"  # camelCase refineModel -> snake_case
+
+
+def test_presence_message_round_trips():
+    # DO -> client presence; the desktop publisher must be able to parse it (it's
+    # in the ServerMessage union) even though it just drains/ignores it.
+    msg = parse_server_message(json.dumps({"type": "presence", "count": 3}))
+    assert isinstance(msg, PresenceMessage)
+    assert msg.count == 3
+    assert json.loads(dump_message(PresenceMessage(count=0))) == {
+        "type": "presence",
+        "count": 0,
+    }
 
 
 def test_set_model_message_refine_optional():

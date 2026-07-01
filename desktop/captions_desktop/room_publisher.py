@@ -62,6 +62,7 @@ class RoomPublisher:
 
     async def _pump(self, ws) -> None:
         q = self._hub.subscribe()
+        drain = asyncio.create_task(self._drain(ws))
         try:
             # Seed the room with current state so it (and late joiners) catch up.
             for m in self._hub.snapshot_for_new_client():
@@ -70,4 +71,16 @@ class RoomPublisher:
                 msg = await q.get()
                 await ws.send(dump_message(msg))
         finally:
+            drain.cancel()
             self._hub.unsubscribe(q)
+
+    @staticmethod
+    async def _drain(ws) -> None:
+        # The room pushes messages to publishers too (e.g. `presence` device
+        # counts). We don't use them, but must read inbound so they can't buffer
+        # and stall the outbound relay.
+        try:
+            async for _ in ws:
+                pass
+        except Exception:  # noqa: BLE001 - connection closing; the send loop handles it
+            pass

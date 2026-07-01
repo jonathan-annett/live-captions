@@ -117,6 +117,8 @@
   // most recently stopped room (offer to reopen the same id/token).
   let roomStartedAt = $state(0);
   let lastRoom = $state<LastRoom | null>(loadLastRoom());
+  // Audience devices currently connected to the room (from the DO's `presence`).
+  let deviceCount = $state<number | null>(null);
 
   // The QR/join target is the short audience page /room?<id>. When the room's
   // WebSocket lives on a different origin than this page, fall back to the
@@ -289,6 +291,19 @@
     return null;
   }
 
+  // All publisher sockets share the same wiring: connection state, re-seed on
+  // (re)connect, and inbound room messages (currently the presence count).
+  function onRoomMessage(msg: ServerMessage): void {
+    if (msg.type === "presence") deviceCount = msg.count;
+  }
+  function newPublisher(url: string): RoomPublisher {
+    return new RoomPublisher(url, {
+      onState: (s) => (publishState = s),
+      seed: roomSnapshot,
+      onMessage: onRoomMessage,
+    });
+  }
+
   async function startRoom(): Promise<void> {
     roomError = null;
     try {
@@ -304,10 +319,7 @@
       lastRoom = null;
       clearLastRoom();
       publisher?.stop();
-      publisher = new RoomPublisher(r.publishUrl, {
-        onState: (s) => (publishState = s),
-        seed: roomSnapshot,
-      });
+      publisher = newPublisher(r.publishUrl);
       publisher.start();
       // Advertise the join QR on the display (shown only in chroma mode);
       // the $effect picks this up and pushes the new config.
@@ -336,6 +348,7 @@
     publisher = null;
     publishState = null;
     publishToken = null;
+    deviceCount = null;
     qr = undefined;
     room = null;
     clearSession();
@@ -354,9 +367,8 @@
     sessionStartedAt = last.startedAt;
     qr = { url: last.joinUrl, x: 72, y: 6, size: 24 };
     publisher?.stop();
-    publisher = new RoomPublisher(
+    publisher = newPublisher(
       roomPublishUrl(last.roomId, last.publishToken, last.roomBase),
-      { onState: (s) => (publishState = s), seed: roomSnapshot },
     );
     publisher.start();
     lastRoom = null;
@@ -470,9 +482,8 @@
     room = { id: saved.roomId, joinUrl: saved.joinUrl };
     qr = { url: saved.joinUrl, x: 72, y: 6, size: 24 };
     try {
-      publisher = new RoomPublisher(
+      publisher = newPublisher(
         roomPublishUrl(saved.roomId, saved.publishToken, saved.roomBase),
-        { onState: (s) => (publishState = s), seed: roomSnapshot },
       );
       publisher.start();
       reconcileFromRoom(saved.roomId, saved.roomBase);
@@ -658,10 +669,7 @@
     } else if (publishUrl) {
       // Legacy/power-user path: a publish target given in the URL starts relaying
       // immediately (independent of the "Start room" button).
-      publisher = new RoomPublisher(publishUrl, {
-        onState: (s) => (publishState = s),
-        seed: roomSnapshot,
-      });
+      publisher = newPublisher(publishUrl);
       publisher.start();
     }
     try {
@@ -964,6 +972,11 @@
               started {new Date(roomStartedAt).toLocaleTimeString()} · {fmtAge(
                 buildClock - roomStartedAt,
               )}
+            </span>
+          {/if}
+          {#if deviceCount !== null}
+            <span class="room-devices">
+              {deviceCount} device{deviceCount === 1 ? "" : "s"} connected
             </span>
           {/if}
           <a href={room.joinUrl} target="_blank" rel="noreferrer">{room.joinUrl}</a>
@@ -1337,6 +1350,11 @@
   .room-started {
     font-size: 0.8rem;
     color: #8a97a8;
+    font-variant-numeric: tabular-nums;
+  }
+  .room-devices {
+    font-size: 0.85rem;
+    color: #5fe39b;
     font-variant-numeric: tabular-nums;
   }
   .room-idle {

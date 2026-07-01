@@ -31,6 +31,11 @@ import {
 
 const RETENTION_MS = 30 * 60 * 1000; // Phase-A default: rolling 30 minutes
 const PRUNE_INTERVAL_MS = 60 * 1000; // alarm cadence while content is retained
+// Reap a stale room: once its log is empty AND no audience is connected, delete
+// the DO's storage (token included) after this idle span, so stopped rooms don't
+// accumulate forever. Comfortably exceeds the client's "restart last room" offer.
+const CLEANUP_IDLE_MS = 24 * 60 * 60 * 1000;
+const IDLE_CHECK_MS = 60 * 60 * 1000; // re-check cadence while empty
 
 interface Env {
   ROOM: DurableObjectNamespace;
@@ -98,7 +103,10 @@ export class CaptionRoom {
       const server = pair[1];
       // Hibernatable accept + role tag, so we can find subscribers after a wake.
       this.state.acceptWebSocket(server, [isPub ? "pub" : "sub"]);
-      if (!isPub) this.sendInitialState(server);
+      if (!isPub) {
+        this.sendInitialState(server);
+        this.broadcastPresence(); // a device joined — update the count everywhere
+      }
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -136,6 +144,9 @@ export class CaptionRoom {
     } catch {
       // already closing
     }
+    // A device (or the publisher) left — recount, excluding the closing socket
+    // (it may still appear in getWebSockets during close).
+    this.broadcastPresence(ws);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
@@ -146,12 +157,33 @@ export class CaptionRoom {
     }
   }
 
-  /** Retention sweep; reschedules itself while any content remains. */
+  /** Retention sweep + stale-room reaper. Reschedules while content remains, then
+   *  slows to an idle check, then deletes the DO's storage once empty + unwatched
+   *  past CLEANUP_IDLE_MS (so stopped rooms don't accumulate forever). */
   async alarm(): Promise<void> {
+    await this.ensureLoaded();
     this.prune();
     if (this.log.size > 0) {
+      await this.state.storage.put("idleSince", 0); // active — reset the idle clock
       await this.state.storage.setAlarm(Date.now() + PRUNE_INTERVAL_MS);
+      return;
     }
+    // Log empty. Keep the room alive while audience is still connected.
+    if (this.state.getWebSockets("sub").length > 0) {
+      await this.state.storage.setAlarm(Date.now() + IDLE_CHECK_MS);
+      return;
+    }
+    // Empty and unwatched: start (or continue) the idle countdown, then reap.
+    const idleSince =
+      (await this.state.storage.get<number>("idleSince")) || Date.now();
+    if (Date.now() - idleSince >= CLEANUP_IDLE_MS) {
+      await this.state.storage.deleteAll(); // token + everything → room ceases to exist
+      this.token = null;
+      this.loaded = false;
+      return; // no reschedule
+    }
+    await this.state.storage.put("idleSince", idleSince);
+    await this.state.storage.setAlarm(Date.now() + IDLE_CHECK_MS);
   }
 
   // --- internals -------------------------------------------------------------
@@ -216,6 +248,23 @@ export class CaptionRoom {
 
   private broadcast(data: string): void {
     for (const ws of this.state.getWebSockets("sub")) {
+      try {
+        ws.send(data);
+      } catch {
+        // socket gone; close handler will reap it
+      }
+    }
+  }
+
+  /** Tell everyone (audience AND the publisher/operator) how many subscriber
+   *  devices are connected. `excluding` drops a socket that's mid-close. */
+  private broadcastPresence(excluding?: WebSocket): void {
+    const count = this.state
+      .getWebSockets("sub")
+      .filter((ws) => ws !== excluding).length;
+    const data = JSON.stringify({ type: "presence", count });
+    for (const ws of this.state.getWebSockets()) {
+      if (ws === excluding) continue;
       try {
         ws.send(data);
       } catch {

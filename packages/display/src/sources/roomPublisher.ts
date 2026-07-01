@@ -1,4 +1,4 @@
-import type { ServerMessage } from "@captions/protocol";
+import { safeParseServerMessage, type ServerMessage } from "@captions/protocol";
 import type { ConnectionState } from "./types.js";
 
 /** Cap the offline buffer so a long disconnect can't grow memory without bound. */
@@ -25,6 +25,8 @@ export interface RoomPublisherOptions {
   onState?: (state: ConnectionState) => void;
   /** Snapshot to (re)seed the room with on each connect (config + history). */
   seed?: () => ServerMessage[];
+  /** Inbound messages from the room (e.g. `presence` device counts). */
+  onMessage?: (msg: ServerMessage) => void;
 }
 
 export class RoomPublisher {
@@ -36,6 +38,7 @@ export class RoomPublisher {
   private queue: string[] = [];
   private readonly onState?: (state: ConnectionState) => void;
   private readonly seed?: () => ServerMessage[];
+  private readonly onMessage?: (msg: ServerMessage) => void;
 
   constructor(
     private readonly publishUrl: string,
@@ -47,6 +50,7 @@ export class RoomPublisher {
     } else if (onStateOrOptions) {
       this.onState = onStateOrOptions.onState;
       this.seed = onStateOrOptions.seed;
+      this.onMessage = onStateOrOptions.onMessage;
     }
   }
 
@@ -79,6 +83,12 @@ export class RoomPublisher {
     };
     this.ws.onclose = () => this.scheduleReconnect();
     this.ws.onerror = () => this.ws?.close();
+    if (this.onMessage) {
+      this.ws.onmessage = (ev: MessageEvent) => {
+        const msg = safeParseServerMessage(String(ev.data));
+        if (msg) this.onMessage!(msg);
+      };
+    }
   }
 
   /** Re-seed the room with the current snapshot (config + history) on connect. */

@@ -18,7 +18,8 @@ from pydantic.alias_generators import to_camel
 # v4: CaptionSegment gains `keepRepeats` (opt out of auto repeat-collapse).
 # v5: `setModel` client message (desktop live/refine model hot-swap).
 # v6: `editSegment` client message (operator correction over the control WS).
-PROTOCOL_VERSION = 6
+# v7: `presence` server message (audience-room connected-device count).
+PROTOCOL_VERSION = 7
 
 
 class _Model(BaseModel):
@@ -206,6 +207,14 @@ class HistoryMessage(_Model):
     segments: list[CaptionSegment]
 
 
+class PresenceMessage(_Model):
+    """Audience-room presence: how many subscriber devices are connected. Emitted
+    by the CaptionRoom DO; the desktop publisher receives (and ignores) it."""
+
+    type: Literal["presence"] = "presence"
+    count: int = Field(ge=0)
+
+
 ServerMessage = Annotated[
     Union[
         PartialMessage,
@@ -214,6 +223,7 @@ ServerMessage = Annotated[
         ConfigMessage,
         StatusMessage,
         HistoryMessage,
+        PresenceMessage,
     ],
     Field(discriminator="type"),
 ]
