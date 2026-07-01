@@ -99,7 +99,13 @@ def run_webview(
     if 0 <= monitor < len(screens):
         kwargs["screen"] = screens[monitor]
 
-    webview.create_window(title, url, **kwargs)
+    # Window-creation ORDER matters on macOS. pywebview makes the FIRST window the
+    # 'master': it's created synchronously and owns the Cocoa run loop, so it's the
+    # reliably-responsive one. Every later window is spun up via callAfter and can
+    # come up with a flaky responder chain — clicks and even title-bar drags get
+    # ignored until the window is re-activated (tab away and back). So when there's
+    # a control panel, create IT first (it's the window the operator interacts with);
+    # the display is output-only, so the secondary-window quirk doesn't bite there.
     if control_url:
         webview.create_window(
             "Caption Guru — Control",
@@ -108,6 +114,7 @@ def run_webview(
             height=820,
             min_size=(720, 560),
         )
+    webview.create_window(title, url, **kwargs)
     # private_mode=False + a stable storage_path so the panel's localStorage
     # prefs (look / model / mic / QR) survive a restart — the default private
     # mode wiped them every launch.
