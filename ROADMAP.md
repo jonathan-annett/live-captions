@@ -118,6 +118,18 @@ Tiers, building on that one backbone:
   and would surface the connected-device count (already emitted) historically.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
+- **Captioner → OBS browser link** — a way for the browser-based captioner (PWA) to
+  feed captions directly into an **OBS Browser Source**. The catch: OBS embeds its own
+  CEF browser, a **separate browser context** from the operator's browser, so
+  `BroadcastChannel` (same-origin, same-browser only) can't bridge them — need a real
+  transport. Options: **WebRTC data channel** (peer-to-peer, low latency, ideal for a
+  local same-machine captioner↔OBS pairing) **with a WebSocket fallback via a Durable
+  Object** (the DO also does WebRTC signaling; falls back to relaying when P2P can't
+  connect). Note the existing `CaptionRoom` DO already offers a WS publish/subscribe
+  path — an OBS source pointed at a room display URL technically works today; this item
+  is the lighter/lower-latency **direct pairing** (a "connect to OBS" browser link) that
+  favors WebRTC locally and only leans on the cloud DO for signaling/fallback. Reuses
+  the shared `packages/display` on-air surface as the OBS-side page.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
   caption box (for lower-thirds keying); the QR may break out of the caption box, large
   enough to scan across an auditorium; a full-screen QR PNG is always downloadable for
