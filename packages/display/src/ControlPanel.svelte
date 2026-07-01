@@ -347,6 +347,27 @@
     }
   }
 
+  // Local OBS Browser Source: the on-air display served by THIS desktop straight
+  // over its WebSocket — no room, no cloud, lowest latency. For OBS on the same
+  // machine (127.0.0.1) or the LAN (open the panel via the machine's LAN IP, and
+  // run with --host 0.0.0.0, so the copied link points at a reachable address).
+  function localObsLink(): string {
+    const u = new URL("display.html", location.href);
+    u.searchParams.set("source", "ws");
+    return u.href;
+  }
+
+  let localObsCopied = $state(false);
+  async function copyLocalObsLink(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(localObsLink());
+      localObsCopied = true;
+      setTimeout(() => (localObsCopied = false), 1500);
+    } catch {
+      localObsCopied = false;
+    }
+  }
+
   // --- operator corrections -------------------------------------------------
   // Each edit computes a corrected (locked) segment via the shared pure logic and
   // sends it as `editSegment`; the server upserts it into the hub (lock-aware) and
@@ -532,6 +553,24 @@
     {/if}
   </section>
 
+  <section class="obs">
+    <h2>OBS / on-air output</h2>
+    <div class="room-actions">
+      <button
+        onclick={copyLocalObsLink}
+        title="On-air captions over this machine's WebSocket — no room, no cloud. Point an OBS Browser Source on this PC (or LAN) at it."
+      >
+        {localObsCopied ? "Local OBS link copied!" : "Copy local OBS link"}
+      </button>
+    </div>
+    <p class="hint">
+      The full on-air output for OBS on <strong>this machine / LAN</strong> — captions,
+      plus the join <strong>QR</strong> whenever a room is running (same config as every
+      surface). No cloud, lowest latency. For OBS on another network, start a room and use
+      the <strong>remote-room</strong> link below.
+    </p>
+  </section>
+
   <section class="room">
     <h2>Audience room</h2>
     <div class="room-actions">
@@ -554,8 +593,11 @@
         <div class="join-qr">{@html qrSvg(joinUrl)}</div>
         <div class="join-meta">
           <a href={joinUrl} target="_blank" rel="noreferrer">{joinUrl}</a>
-          <button onclick={copyObsLink} title="Copy the OBS Browser Source URL for this room">
-            {obsCopied ? "OBS link copied!" : "Copy OBS link"}
+          <button
+            onclick={copyObsLink}
+            title="On-air captions via the cloud room — for OBS on another network"
+          >
+            {obsCopied ? "Remote OBS link copied!" : "Copy remote-room OBS link"}
           </button>
           <button onclick={downloadSlide}>Download QR slide (PNG)</button>
         </div>
