@@ -451,6 +451,29 @@
     URL.revokeObjectURL(url);
   }
 
+  // OBS Browser Source link: the on-air display page subscribed to this room.
+  // Same-origin gives /display.html?source=room&room=<id>; a cross-origin room
+  // base adds &base=<origin> so the display knows where to connect.
+  function obsLinkFor(id: string): string {
+    const u = new URL("display.html", location.href);
+    u.searchParams.set("source", "room");
+    u.searchParams.set("room", id);
+    if (roomBase !== location.origin) u.searchParams.set("base", roomBase);
+    return u.href;
+  }
+
+  let obsCopied = $state(false);
+  async function copyObsLink(): Promise<void> {
+    if (!room) return;
+    try {
+      await navigator.clipboard.writeText(obsLinkFor(room.id));
+      obsCopied = true;
+      setTimeout(() => (obsCopied = false), 1500);
+    } catch {
+      obsCopied = false;
+    }
+  }
+
   // --- persistent QR PNG file (Chromium only) -------------------------------
   // Pick a real file on disk to remember; if a room is live, write it right away.
   async function chooseQrFile(): Promise<void> {
@@ -1074,6 +1097,9 @@
           {/if}
           <a href={room.joinUrl} target="_blank" rel="noreferrer">{room.joinUrl}</a>
           <div class="room-actions">
+            <button onclick={copyObsLink} title="Copy the OBS Browser Source URL for this room">
+              {obsCopied ? "OBS link copied!" : "Copy OBS link"}
+            </button>
             <button onclick={downloadQrPng}>Download QR slide (PNG)</button>
             <button class="stop" onclick={stopRoom}>Stop room</button>
           </div>
