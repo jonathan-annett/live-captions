@@ -69,3 +69,5 @@ jobs:
         with:
           files: artifacts/*.zip
           generate_release_notes: true
+          # Hyphenated tags (e.g. v0.2.0-beta, v0.2.0-rc1) publish as prereleases.
+          prerelease: ${{ contains(github.ref_name, '-') }}
