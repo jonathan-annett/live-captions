@@ -31,6 +31,50 @@ Tiers, building on that one backbone:
    historical viewer with **tap-a-line-to-hear-it** + word karaoke (live mode stays text-only).
 
 ## Later
+- **⭐ NEXT — Unified model manager (both platforms)** — decouple **managing** models
+  (install / verify / remove) from **selecting** a running model. This collapses a whole
+  class of picker problems (download-during-switch, "loading" states, a dropdown that lies)
+  by construction: the **live + refine selection dropdowns only ever contain models that are
+  installed AND smoke-tested as spinnable**, so switching is always instant and never fails
+  on a download. A fresh install starts with **empty dropdowns**; models appear only after a
+  successful install+verify. The list is an **app-maintained registry**, cached + rehydrated
+  on app start / page refresh (not runtime-probed).
+  - **"Installed" = downloaded AND loaded AND passed a trivial decode** (reuse the warmup —
+    1s of zeros, `streaming.py:203`). Only then does a model enter the registry + dropdowns;
+    this is the gate that catches "downloaded but won't spin up."
+  - **A "Models" area** (Available catalog vs Installed set, with size + Remove) is where ALL
+    download progress + failure feedback lives — off the live-captioning path entirely. This
+    is where release users get the feedback they currently only see in the terminal.
+  - **Same UI on PWA + desktop, different guts** (the codebase's existing pattern — cf. the
+    shared `Corrections.svelte`; realizes the [[native-config-mode]] "PWA-identical layout"
+    goal). A shared **`ModelsPanel.svelte`** (`packages/display`) + shared types in
+    `packages/protocol` (`InstalledModel` / `AvailableModel` / `InstallProgress` / catalog),
+    over a common **`ModelManager` interface** with two impls: **PWA** = fetch+cache via the
+    `/hf` proxy, smoke-test in the ASR worker, registry in browser storage (reuses the
+    existing PWA download-progress UI); **desktop** = HF download + smoke-test via a transient
+    engine, disk registry, driven over the control WS (`installModel`/`removeModel`/
+    `requestModels`, protocol **v10**). The caching mechanism (CTranslate2 / MLX / ONNX) is
+    fully abstracted from the user.
+  - **Three places the abstraction legitimately leaks — the same UI must handle honestly:**
+    (1) **practicality differs** — `small.en` is the sane in-browser ceiling, `large-v3` is
+    fine on desktop but impractical in a browser → the catalog carries per-platform metadata
+    (`recommended` / `experimental-slow` / `unavailable-here`) so the identical UI shows the
+    right options + warnings; (2) **refine is desktop-only today** (the PWA refine path is the
+    sherpa-onnx idea) → the shared component degrades gracefully, hiding the refine picker on
+    PWA; (3) **custom HF repo can't be format-abstracted** (desktop wants CTranslate2/MLX, PWA
+    wants ONNX) → the smoke-test gate catches a mismatch and shows a clear "not in a
+    browser-compatible format" message (presets hide format entirely; custom is the one spot
+    the user meets it, and only on failure).
+  - **Edge cases to design for:** onboarding **empty-state** (fresh install = blank dropdowns
+    = "install your first model", one-click *Install small.en*); the **CLI `--model` flag
+    auto-installs+verifies** on launch so CLI and registry stay consistent; **"installed" is
+    per-backend** (same name, different artifact per engine — MLX vs faster-whisper vs GGML);
+    **smoke-testing a big model on constrained HW** (8 GB) may need to run only when idle /
+    serialized to avoid OOM; **remove-while-running guard**; **registry reconciliation** on
+    start (drop entries whose cache was deleted out from under it). Custom repo becomes an
+    *Install* action — which elegantly retires the old "custom repo can't auto-apply" problem.
+  - **Umbrella:** this front-runs *Native config screen — model management* and *Model cache:
+    persist + portability* below, and is the flagged **next major iteration after v0.2.0-beta**.
 - **Live translation** — per-language rooms (id scheme reserves `:lang`); on-device or cloud MT.
 - **Quality** — hallucination suppression (no-speech/low-confidence gating), Silero VAD, latency
   tuning; **speech-gated input gain** (normalize detected-speech to a healthy level *before* the
