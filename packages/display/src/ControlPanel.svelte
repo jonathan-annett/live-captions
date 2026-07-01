@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import {
     DEFAULT_DISPLAY_CONFIG,
     exportTranscript,
@@ -284,13 +284,16 @@
     });
   }
 
-  // Live-tweak the overlay on an already-running room: resend a full qr config
-  // (with the server-minted url) whenever a control changes. No-op until a room
-  // is live, so it never fabricates a url or fights a stopped room.
+  // Live-tweak the overlay on an already-running room: push the qr config when
+  // the operator changes a control. The server-minted url is read UNTRACKED — if
+  // it were a reactive dep, a new url from the server (e.g. a freshly-minted room)
+  // would re-trigger this echo, and two urls would ping-pong forever (the QR flips
+  // between codes). We only push on operator input; the room owns the url.
   $effect(() => {
-    const url = store.config.qr?.url;
-    const over = qrOverrides(); // reactive deps: every qr control
-    if (!synced || !url) return;
+    const over = qrOverrides(); // reactive dep: only the operator's qr controls
+    if (!synced) return;
+    const url = untrack(() => store.config.qr?.url);
+    if (!url) return;
     socket?.send({ type: "setConfig", config: { qr: { url, ...over } } });
   });
 
