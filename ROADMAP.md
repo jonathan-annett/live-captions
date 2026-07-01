@@ -76,6 +76,25 @@ Tiers, building on that one backbone:
   end/forget them explicitly. Extends toward **historical sessions** — browse and
   reopen past rooms (ties into archive/replay). The single-last-room reopen +
   "room started at …" indicator already shipped; this is the multi-session UI.
+- **Audience-view redaction (operator-controlled, non-destructive)** — trim what
+  the audience *sees* without touching the canonical transcript (which stays whole
+  for exports/archive). Two capabilities: (1) a retroactive **"mark start here"** —
+  set the room's viewer start point after captioning began, so all devices stop
+  showing speech from before it (false starts, pre-event chatter); (2) **hide
+  sections** from the live/audience view (e.g. a morning-tea announcement that
+  isn't part of the formal record). Design: a display-visibility layer applied at
+  the Viewer render — a room-level `viewerFloor` timestamp for the start marker,
+  plus a per-segment `hidden` flag for redaction (lockstep protocol add). Both ride
+  the existing lock-aware upsert, so a re-emit reaches already-connected viewers and
+  they re-render without the hidden content; the canonical log is unchanged. Operator
+  toggles live in the correction panel. Relates to [[correction-ui-tap-transferable]]
+  (editor-only, tap-transferable to a future moderator UI).
+- **Per-viewer accessibility on mobile** — let each audience device set its OWN
+  text size, text colour, and background (high-contrast / large-text) in the mobile
+  Viewer, stored locally on that phone — independent of the operator's pushed
+  DisplayConfig (which drives the shared projection). A small settings/gear panel in
+  `Viewer.svelte`; purely client-side (no protocol change), so a low-vision viewer
+  can crank up size/contrast without affecting anyone else or the on-air output.
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
