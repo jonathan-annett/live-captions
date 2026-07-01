@@ -53,6 +53,23 @@ Tiers, building on that one backbone:
   so it lands on PWA + desktop together; keeps the click-or-tap, editor-only-colours design
   that must also drop into the future moderator/voting UI. (Sequenced after the rest of the
   parity-audit follow-ups.)
+- **Spike: sherpa-onnx as a second in-browser ASR engine** (research) — evaluate
+  [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/) (k2-fsa; Apache-2.0; ONNX
+  Runtime **WASM** build for the browser) alongside the current transformers.js
+  Whisper. The interesting hypothesis: run **WASM (CPU) refinement concurrently
+  with the WebGPU (GPU) real-time pass** — different compute backends, so unlike
+  the desktop (one Metal GPU, serialized) they could genuinely overlap, bringing
+  **two-tier refinement to the PWA** (today desktop-only). What it might also get
+  us: a true **streaming** transducer/zipformer model (lower latency than Whisper's
+  chunked decode), **real token/word confidence + alignment** (closing the PWA's
+  heuristic-confidence gap that transformers.js can't), and a built-in Silero VAD.
+  **Key risk to settle first:** multi-threaded WASM wants `SharedArrayBuffer` →
+  COOP/COEP cross-origin isolation, which this project deliberately AVOIDS (Whisper
+  loads via the same-origin `/hf` proxy precisely so we never re-add COOP/COEP) —
+  so measure single-threaded WASM perf, or find a way to isolate only the worker.
+  Also weigh: zipformer-en accuracy/punctuation vs Whisper small.en, model +
+  bundle size, and whether GPU+CPU actually run without contending. Protocol is
+  unaffected (just another engine behind the same interface).
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
