@@ -2,9 +2,11 @@
   import { onMount } from "svelte";
   import {
     DEFAULT_DISPLAY_CONFIG,
+    exportTranscript,
     type Background,
     type CaptionSegment,
     type DisplayConfig,
+    type ExportFormat,
   } from "@captions/protocol";
   import { ControlSocket } from "./controlSocket.js";
   import Corrections from "./Corrections.svelte";
@@ -64,6 +66,14 @@
   let boxY = $state(68);
   let boxW = $state(88);
   let boxH = $state(26);
+  // Auto height: derive the box height from #lines × font size (mirror the PWA),
+  // so the operator sizes by lines, not raw %.
+  let autoHeight = $state(true);
+  let boxLines = $state(2);
+  const computedBoxH = $derived(
+    Math.min(100, Math.max(5, Math.round(fontSize * (1.3 * boxLines + 0.8)))),
+  );
+  const effectiveBoxH = $derived(autoHeight ? computedBoxH : boxH);
 
   let dictionaryText = $state("");
 
@@ -115,7 +125,7 @@
       boxColor: boxFill ? boxColor : (null as unknown as undefined),
       boxRadius: boxFill && boxRadius ? boxRadius : (null as unknown as undefined),
       region: boxEnabled
-        ? { x: boxX, y: boxY, width: boxW, height: boxH }
+        ? { x: boxX, y: boxY, width: boxW, height: effectiveBoxH }
         : (null as unknown as undefined),
     };
   });
@@ -177,11 +187,27 @@
   }
 
   function pushDictionary(): void {
-    const terms = dictionaryText
-      .split(/[\n,]/)
-      .map((t) => t.trim())
-      .filter(Boolean);
-    socket?.send({ type: "setDictionary", terms });
+    socket?.send({ type: "setDictionary", terms: dictTerms });
+  }
+
+  // Apply dictionary edits live (debounced) while captioning, like the PWA — no
+  // need to press a button. The explicit button stays for an immediate apply.
+  let dictTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const terms = dictTerms; // reactive dependency
+    if (!synced) return;
+    if (dictTimer) clearTimeout(dictTimer);
+    dictTimer = setTimeout(() => socket?.send({ type: "setDictionary", terms }), 400);
+  });
+
+  function download(format: ExportFormat): void {
+    const { body, mime, filename } = exportTranscript(store.segments, format);
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function applyModel(): void {
@@ -225,9 +251,22 @@
   </header>
 
   <section class="row">
-    <button class="go" onclick={() => command("start")}>Start</button>
-    <button onclick={() => command("stop")}>Stop</button>
-    <button onclick={() => command("clear")}>Clear</button>
+    <button
+      class="go"
+      onclick={() => command("start")}
+      disabled={engineState === "listening" || engineState === "loading"}
+    >
+      Start
+    </button>
+    <button onclick={() => command("stop")} disabled={engineState === "idle"}>
+      Stop
+    </button>
+    <button
+      onclick={() => command("clear")}
+      disabled={!store.segments.length && !store.partial}
+    >
+      Clear
+    </button>
   </section>
 
   <section class="model">
@@ -340,8 +379,16 @@
         <label>X% <input type="number" min="0" max="100" bind:value={boxX} /></label>
         <label>Y% <input type="number" min="0" max="100" bind:value={boxY} /></label>
         <label>W% <input type="number" min="0" max="100" bind:value={boxW} /></label>
-        <label>H% <input type="number" min="0" max="100" bind:value={boxH} /></label>
+        {#if autoHeight}
+          <label>Lines <input type="number" min="1" max="6" bind:value={boxLines} /></label>
+        {:else}
+          <label>H% <input type="number" min="0" max="100" bind:value={boxH} /></label>
+        {/if}
       </div>
+      <label class="check">
+        <input type="checkbox" bind:checked={autoHeight} />
+        Auto height (lines × font size{autoHeight ? ` ≈ ${effectiveBoxH}%` : ""})
+      </label>
     {/if}
   </section>
 
@@ -352,7 +399,42 @@
       bind:value={dictionaryText}
       placeholder="Event terms — comma or newline separated (e.g. Kubernetes, PostgreSQL)"
     ></textarea>
-    <button onclick={pushDictionary}>Apply dictionary</button>
+    <button onclick={pushDictionary}>Apply now</button>
+    <details class="dict-help">
+      <summary>How the custom dictionary works</summary>
+      <div class="dict-help-body">
+        <p>
+          After each line is recognized, the dictionary <strong>nudges close-but-wrong
+          words back to the spelling you want</strong>. It runs on-device, instantly,
+          and applies <strong>live as you type</strong> (the button forces an
+          immediate apply). It's deliberately conservative: only a near-miss for one
+          of your terms is changed, so ordinary text is never corrupted.
+          Capitalization is preserved.
+        </p>
+        <ul>
+          <li>Each term is a <strong>single word of 4+ letters</strong> (very short
+            acronyms like “AI”/“CPU” are skipped).</li>
+          <li>Only <strong>near-misses</strong> are fixed (a letter or two off) — not
+            a word heard as a completely different word.</li>
+        </ul>
+        <p class="dict-eg">
+          e.g. <code>ondansetron, echocardiogram</code> → “ondanZetron” corrected;
+          <code>Kubernetes, PostgreSQL</code> → “kubernetis” → “Kubernetes”. A
+          sound-alike heard as a different word (“SQL” → “sequel”) isn't a near-miss —
+          fix those by clicking the word in <strong>Captions</strong> below.
+        </p>
+      </div>
+    </details>
+  </section>
+
+  <section class="export">
+    <h2>Export</h2>
+    <div class="export-row">
+      <span>Transcript</span>
+      <button onclick={() => download("txt")} disabled={!store.segments.length}>TXT</button>
+      <button onclick={() => download("srt")} disabled={!store.segments.length}>SRT</button>
+      <button onclick={() => download("vtt")} disabled={!store.segments.length}>VTT</button>
+    </div>
   </section>
 
   <section class="preview">
@@ -518,5 +600,34 @@
   }
   .empty {
     color: #777;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .dict-help {
+    margin-top: 0.5rem;
+    font-size: 0.82rem;
+    color: #999;
+  }
+  .dict-help summary {
+    cursor: pointer;
+    color: #9fb4d4;
+  }
+  .dict-help-body {
+    margin-top: 0.4rem;
+    line-height: 1.5;
+  }
+  .dict-help code {
+    background: #1a1a1a;
+    padding: 0 0.2rem;
+    border-radius: 3px;
+  }
+  .export-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    color: #ccc;
   }
 </style>
