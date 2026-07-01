@@ -37,12 +37,38 @@ Tiers, building on that one backbone:
   model — gated to speech so gaps/noise are never boosted into hallucinations; helps quiet
   utterances + quantized q4/int8 models, which self-normalizing Whisper benefits from only
   modestly), and **high-pass / light denoise** as a cleaner ASR feed.
+- **Non-lexical sound tags off the projection** — keep Whisper's bracketed non-speech
+  annotations (`[Music]`, `[Applause]`, `[Laughter]`, `(music)`, `♪ … ♪`, `[BLANK_AUDIO]`)
+  out of the **on-air / HDMI caption window** so they don't waste screen space, while still
+  showing them in the **audience mobile viewer / log** (and exports) as a faithful record.
+  Applies to PWA + desktop; because both HDMI outputs share the `packages/display` on-air
+  render, it's a single render-surface filter (in `captionStore`, partial + finals), driven
+  by a shared detector in `@captions/protocol` — not a source-level drop.
+- **Operator editor — full-screen + input-modality parity** — a full-screen/zoom mode for
+  the correction editor so the operator can work at a comfortable size on a big screen, and
+  first-class support for **keyboard-only, mouse-only, and touch-only** operation (not just
+  the current click/tap): focusable segments/words, arrow-key navigation, shortcuts for the
+  correction actions (fix / sound-alike pick / suppress / join-boundary / undo), and tap
+  targets sized for touch with no hover-only affordances. Shared editor (`Corrections.svelte`),
+  so it lands on PWA + desktop together; keeps the click-or-tap, editor-only-colours design
+  that must also drop into the future moderator/voting UI. (Sequenced after the rest of the
+  parity-audit follow-ups.)
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
-  caption box (for lower-thirds keying); the live-room QR overlay is offered only in
-  chroma mode and may break out of the caption box (large enough to scan across an
-  auditorium); a full-screen QR PNG is always downloadable for slides/other gear.
+  caption box (for lower-thirds keying); the QR may break out of the caption box, large
+  enough to scan across an auditorium; a full-screen QR PNG is always downloadable for
+  slides/other gear.
+- **QR overlay — standalone, fully operator-controlled** (design revised 2026-07-01,
+  supersedes the old "chroma-only, auto-shown" behavior): an explicit **on/off toggle**
+  (no longer tied to chroma mode), displayable in **any** background mode (solid /
+  transparent / chroma), freely **positioned and sized**, with an **editable message**
+  explaining what it is (e.g. "Scan for live captions"), plus an **exclusive** toggle
+  that **hides the captions while the QR is shown** (a full-attention "scan now" moment).
+  Full-screen QR PNG still always downloadable. Protocol: extend `QrOverlay` (lockstep TS
+  Zod ↔ pydantic) with `enabled`, `label`, `exclusive`; expose the controls in both
+  operator panels (`Control.svelte` + `ControlPanel.svelte`); the display renders it
+  independent of `background.kind`.
 - **Native config screen** — GUI for audio device, fonts, theming, **and ASR model**
   (default-model picker + download/manage models) instead of CLI-only flags; PWA-identical
   layout with settings portable PWA↔desktop both ways. (Model *picker* may land with v2;
