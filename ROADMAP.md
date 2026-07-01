@@ -53,6 +53,20 @@ Tiers, building on that one backbone:
   so it lands on PWA + desktop together; keeps the click-or-tap, editor-only-colours design
   that must also drop into the future moderator/voting UI. (Sequenced after the rest of the
   parity-audit follow-ups.)
+- **Audio level / VU meter in both control panels (UX)** — a signal indicator so the
+  operator can confirm the mic is actually feeding audio, and see when it's **too quiet**
+  (optionally **clipping**), instead of guessing why captions are sparse (usually a wrong
+  device / dead loopback / muted input). **Web (PWA): trivial** — the `Captioner`'s
+  AudioContext + `pcm-worklet` already run in the *same context* as `Control.svelte`;
+  compute per-frame RMS/peak (dBFS), expose a reactive level, render a meter, and tie the
+  "too quiet" warning to the VAD's min-RMS gate (level is basically already computed in the
+  VAD path). **Desktop: needs a relay** — audio is captured server-side in `LiveStreamer`,
+  so the level must reach the `/control` browser panel via a **low-rate (~10–20 Hz) level
+  message over the existing `/ws`** (SSE unnecessary — WS is already there). **Design
+  caution:** the hub's normal broadcast is teed to the audience room by `room_publisher`,
+  so audio-level frames must **NOT** ride that path (pointless cloud bandwidth + reaches
+  displays that don't need it) — send them on a **control-only side channel** or a message
+  type the publisher filters out. Reuse the RMS the VAD already computes; keep it cheap.
 - **Spike: sherpa-onnx as a second in-browser ASR engine** (research) — evaluate
   [sherpa-onnx](https://k2-fsa.github.io/sherpa/onnx/) (k2-fsa; Apache-2.0; ONNX
   Runtime **WASM** build for the browser) alongside the current transformers.js
