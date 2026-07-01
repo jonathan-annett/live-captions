@@ -390,13 +390,15 @@
   }
 
   // Local OBS Browser Source: the on-air display served by THIS desktop straight
-  // over its WebSocket — no room, no cloud, lowest latency. For OBS on the same
-  // machine (127.0.0.1) or the LAN (open the panel via the machine's LAN IP, and
-  // run with --host 0.0.0.0, so the copied link points at a reachable address).
+  // over its WebSocket — no room, no cloud, lowest latency. The desktop serves the
+  // on-air display at the ROOT ("/"), not display.html (that's the cloud/PWA build),
+  // so build "<origin>/?source=ws". For OBS on the same machine use 127.0.0.1; for
+  // the LAN, open the panel via the machine's LAN IP and run with --host 0.0.0.0 so
+  // the copied link points at a reachable address.
   function localObsLink(): string {
-    const u = new URL("display.html", location.href);
+    const u = new URL(location.origin);
     u.searchParams.set("source", "ws");
-    return u.href;
+    return u.href; // e.g. http://127.0.0.1:8765/?source=ws
   }
 
   let localObsCopied = $state(false);
