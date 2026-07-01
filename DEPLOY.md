@@ -65,6 +65,9 @@ git tag v0.1.1 && git push origin v0.1.1
 ```bash
 git tag v0.1.1-intel && git push origin v0.1.1-intel
 ```
+When the `macos-13` runner is unavailable (a build can sit queued for a day+),
+build the Intel bundle **by hand on an Intel Mac** — full runbook in
+[`RELEASE-macos-intel-manual.md`](RELEASE-macos-intel-manual.md).
 
 ## Local build
 ```bash
