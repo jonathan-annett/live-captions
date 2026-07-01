@@ -18,6 +18,7 @@ from .protocol import (
     ConfigMessage,
     DEFAULT_DISPLAY_CONFIG,
     DisplayConfig,
+    EngineStatus,
     FinalMessage,
     HistoryMessage,
     PartialMessage,
@@ -34,6 +35,7 @@ class CaptionHub:
     def __init__(self, window_seconds: float = 1800.0) -> None:
         self.window_seconds = window_seconds
         self.config: DisplayConfig = DEFAULT_DISPLAY_CONFIG.model_copy(deep=True)
+        self._status: Optional[EngineStatus] = None
         self._finals: list[CaptionSegment] = []
         self._subscribers: set[asyncio.Queue[ServerMessage]] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -125,12 +127,17 @@ class CaptionHub:
     def emit_final(self, segment: CaptionSegment) -> None:
         self.submit(FinalMessage(segment=segment))
 
-    def emit_status(self, status) -> None:  # EngineStatus
+    def emit_status(self, status: EngineStatus) -> None:
+        # Remember the latest status so a freshly-connected control panel learns
+        # the true engine state (e.g. `listening`) on refresh — the panel's audio
+        # is server-side, so a browser reload must re-sync state, not reset it.
+        self._status = status
         self.submit(StatusMessage(status=status))
 
     def snapshot_for_new_client(self) -> list[ServerMessage]:
         """Messages a freshly connected client should receive to catch up."""
-        return [
-            ConfigMessage(config=self.config),
-            HistoryMessage(segments=list(self._finals)),
-        ]
+        snapshot: list[ServerMessage] = [ConfigMessage(config=self.config)]
+        if self._status is not None:
+            snapshot.append(StatusMessage(status=self._status))
+        snapshot.append(HistoryMessage(segments=list(self._finals)))
+        return snapshot

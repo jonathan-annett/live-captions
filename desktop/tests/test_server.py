@@ -81,6 +81,21 @@ def test_set_input_device_switches_and_echoes_selection():
     assert reply.type == "audioDevices" and reply.current == 3
 
 
+def test_snapshot_replays_current_status_after_emit():
+    # A refreshed control panel must learn the true engine state (Start/Stop
+    # buttons key off it) — the snapshot replays the last status.
+    from captions_desktop.protocol import EngineStatus
+
+    hub = CaptionHub()
+    hub.submit = hub._dispatch  # no event loop in this test
+    assert [m.type for m in hub.snapshot_for_new_client()] == ["config", "history"]
+    hub.emit_status(EngineStatus(state="listening", model="small.en"))
+    snap = hub.snapshot_for_new_client()
+    assert [m.type for m in snap] == ["config", "status", "history"]
+    status_msg = next(m for m in snap if m.type == "status")
+    assert status_msg.status.state == "listening" and status_msg.status.model == "small.en"
+
+
 def test_history_endpoint_empty_without_autostart():
     hub = CaptionHub()
     app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)
@@ -95,9 +110,13 @@ def test_ws_sends_catchup_then_streams_captions():
     app = build_app(hub, MockProducer(hub), web_dir=None)  # autostart mock
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
-            # New clients are caught up with config then history.
+            # New clients are caught up with config, an optional current-status
+            # snapshot (if the engine has emitted one), then history.
             assert ws.receive_json()["type"] == "config"
-            assert ws.receive_json()["type"] == "history"
+            msg = ws.receive_json()
+            if msg["type"] == "status":
+                msg = ws.receive_json()
+            assert msg["type"] == "history"
             # The mock producer should stream captions shortly after.
             seen = set()
             for _ in range(40):
