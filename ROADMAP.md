@@ -130,6 +130,31 @@ Tiers, building on that one backbone:
   is the lighter/lower-latency **direct pairing** (a "connect to OBS" browser link) that
   favors WebRTC locally and only leans on the cloud DO for signaling/fallback. Reuses
   the shared `packages/display` on-air surface as the OBS-side page.
+- **GGML / whisper.cpp desktop backend (LOW PRIORITY)** — a third `ASREngine`
+  (alongside faster-whisper/CTranslate2 + MLX) wrapping whisper.cpp/GGML, to reach
+  GPUs the current stack can't. **The two structural GPU gaps today:** (1) any Mac
+  GPU that isn't Apple Silicon — i.e. **Intel Macs** (AMD Radeon / Intel iGPU, Metal-
+  capable but MLX is Apple-Silicon-only and CTranslate2's only GPU path is CUDA), and
+  (2) **any non-NVIDIA GPU on Windows/Linux** (AMD, integrated Intel) — CTranslate2 is
+  CUDA-only, so those are CPU-bound too. GGML's many backends (Metal / Vulkan / ROCm /
+  CUDA) close **both** with one engine; it's **additive only where we're CPU-bound**
+  and **redundant on Apple Silicon (MLX) + NVIDIA (CTranslate2)**. The biggest non-
+  redundant reach is actually **AMD GPUs on Windows/Linux** (more common than Intel
+  Macs), not Intel Macs per se. **Win only matters for HEAVY models** — small.en is
+  already fine on CPU; GPU moves large-v3/turbo from "too slow" to "usable." **Cost is
+  in packaging, not code:** the `ASREngine` interface fits cleanly (~1–2 days of glue),
+  but shipping GPU-enabled native libs is the real work (~4–7 days total) — the binding
+  must be **built with the backend enabled** (PyPI wheels are often CPU-only), the
+  Metal/Vulkan shaders bundled into the PyInstaller one-folder build, and **real GPU
+  engagement verified** (silent CPU fallback is the failure mode); GPU paths are only
+  testable on real hardware (headless CI has no GPU). One code backend = one build
+  config **per GPU API per OS**, so the tax scales with how many you actually ship.
+  Same single-GPU serialization concern as MLX (`_MLX_LOCK`) → refine still stays on
+  CPU. **Decide first:** how many users are on AMD-GPU Win/Linux or Intel Macs AND want
+  heavy models — if the base is mostly Apple Silicon + NVIDIA this is largely redundant.
+  Desktop-native twin of the **sherpa-onnx spike** above (`SPIKE-sherpa-onnx.md`) — both
+  add a non-CUDA/non-MLX accelerated engine; also informs the Intel-Mac keep-vs-sunset
+  call (`RELEASE-macos-intel-manual.md`).
 - **Chroma projection + QR** — chroma-key output with an operator-positioned/sized
   caption box (for lower-thirds keying); the QR may break out of the caption box, large
   enough to scan across an auditorium; a full-screen QR PNG is always downloadable for
