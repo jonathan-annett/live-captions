@@ -312,6 +312,7 @@
     publishToken = null;
     qr = undefined;
     room = null;
+    clearSession();
   }
 
   async function downloadQrPng(): Promise<void> {
@@ -335,15 +336,14 @@
     const count = store.finals.length; // reactive dep: re-run as transcript grows
     void count;
     if (!live) {
+      // Cancel a pending save, but DON'T clear the record here. Clearing is
+      // explicit (Stop / Stop room). A reactive clear would wipe the record on
+      // the initial mount — before onMount's loadSession() can read it — and
+      // again in the pre-resume state, so the mask would never appear.
       if (saveTimer) {
         clearTimeout(saveTimer);
         saveTimer = null;
       }
-      // While a recovery is pending (mask up, mic not yet re-armed) `running` is
-      // false — don't wipe the record, so it survives a second refresh until the
-      // operator actually resumes.
-      if (recovering) return;
-      clearSession();
       return;
     }
     if (saveTimer) return; // a write is already scheduled
@@ -391,7 +391,14 @@
       "keydown",
       "touchstart",
     ];
-    const handler = (): void => void resumeGesture();
+    const handler = (ev: Event): void => {
+      // Gestures over the card are for its own buttons (so "Start fresh" stays
+      // reachable — otherwise a mousemove toward it would auto-resume first).
+      // Anywhere else, any gesture resumes.
+      const t = ev.target as Element | null;
+      if (t?.closest?.(".resume-card")) return;
+      void resumeGesture();
+    };
     for (const e of events) window.addEventListener(e, handler, { passive: true });
     return () => {
       for (const e of events) window.removeEventListener(e, handler);
@@ -403,6 +410,9 @@
   // the log + token), pull the DO's canonical history to reconcile, then raise
   // the resume mask.
   function recoverSession(saved: PersistedSession): void {
+    // Raise the mask first — the room reconnect below is best-effort and must
+    // never suppress the resume prompt if it throws.
+    recovering = saved;
     model = saved.model;
     deviceId = saved.deviceId;
     sessionStartedAt = saved.startedAt;
@@ -410,13 +420,16 @@
     for (const seg of saved.finals) store.apply({ type: "final", segment: seg });
     room = { id: saved.roomId, joinUrl: saved.joinUrl };
     qr = { url: saved.joinUrl, x: 72, y: 6, size: 24 };
-    publisher = new RoomPublisher(
-      roomPublishUrl(saved.roomId, saved.publishToken, saved.roomBase),
-      { onState: (s) => (publishState = s), seed: roomSnapshot },
-    );
-    publisher.start();
-    reconcileFromRoom(saved.roomId, saved.roomBase);
-    recovering = saved;
+    try {
+      publisher = new RoomPublisher(
+        roomPublishUrl(saved.roomId, saved.publishToken, saved.roomBase),
+        { onState: (s) => (publishState = s), seed: roomSnapshot },
+      );
+      publisher.start();
+      reconcileFromRoom(saved.roomId, saved.roomBase);
+    } catch (err) {
+      roomError = String(err);
+    }
   }
 
   // One-shot subscriber to pull the room's canonical history (covers a transcript
@@ -456,6 +469,15 @@
     } finally {
       resuming = false;
     }
+  }
+
+  // Decline recovery: drop the record, disconnect the reconnected room, and clear
+  // the restored transcript for a clean slate.
+  function dismissRecovery(): void {
+    recovering = null;
+    clearSession();
+    stopRoom();
+    store.apply({ type: "clear" });
   }
 
   // Single funnel for the captioner's output: mirror to the UI, and (when
@@ -639,6 +661,9 @@
     captioner?.stop();
     captioner = null;
     running = false;
+    // A deliberate stop ends the recoverable session (a refresh shouldn't
+    // resurrect it); an active room stays up until "Stop room".
+    clearSession();
   }
 
   function openDisplay() {
@@ -688,9 +713,12 @@
         connection. Move the mouse, click, or press any key to re-enable the
         microphone and continue captioning.
       </p>
-      <button class="start" onclick={() => void resumeGesture()}>
-        Resume captioning
-      </button>
+      <div class="resume-actions">
+        <button class="start" onclick={() => void resumeGesture()}>
+          Resume captioning
+        </button>
+        <button onclick={dismissRecovery}>Start fresh</button>
+      </div>
     </div>
   </div>
 {/if}
@@ -1272,5 +1300,10 @@
     color: #9fb0c4;
     line-height: 1.5;
     margin: 0 0 1.25rem;
+  }
+  .resume-actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: center;
   }
 </style>
