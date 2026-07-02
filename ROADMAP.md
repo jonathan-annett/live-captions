@@ -60,6 +60,15 @@ Tiers, building on that one backbone:
     a copied cache before trusting it). HF's own cache is already content-addressed
     (`blobs/<sha>` + `refs/` + `snapshots/`), so this mostly **adds a verify-on-ingest gate + a
     friendly-name registry + a GC/pin policy** on top rather than reinventing the store.
+  - **Browser byte-level download resume.** The PWA today resumes only at **file**
+    granularity (transformers.js caches completed files in Cache Storage; a file
+    interrupted mid-download restarts from byte 0), unlike desktop huggingface_hub's
+    true `.incomplete` + HTTP-`Range` resume. Byte-level browser resume needs a
+    **service worker intercepting `/hf`** to issue `Range` requests + cache partials,
+    plus the `/hf` proxy forwarding `Content-Length`/`Accept-Ranges` and honouring
+    `Range` (it currently drops `Content-Length` — same reason there's no download %).
+    Matters for big blobs (large-v3-turbo) on flaky venue wifi; small models are fine on
+    file-level resume. Lives in this download layer next to verify-on-ingest.
   - **A "Models" area** (Available catalog vs Installed set, with size + Remove) is where ALL
     download progress + failure feedback lives — off the live-captioning path entirely. This
     is where release users get the feedback they currently only see in the terminal.
