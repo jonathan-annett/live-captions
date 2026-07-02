@@ -286,6 +286,18 @@ Tiers, building on that one backbone:
     the **publishable key is public** (commit-safe), the **secret key is not** (rides the
     existing gitignored-secrets pattern). Ties to [[release-channels]] (flip `prelaunch → live`
     at the apex cutover).
+  - **Desktop download = soft gate + runtime version negotiation (DECIDED 2026-07-02).** A
+    free Clerk sign-in funnels the desktop download **through the PWA**, which serves the
+    **correct-platform artifact**; keep the **public GitHub Releases** (M8 upgrade path) and
+    have the PWA only *surface* the link when signed in — near-zero infra, preserves the
+    local/offline privacy story. **NOT a hard gate now** (no R2-proxied authenticated
+    downloads / private releases); revisit only when licensing/revocation actually needs it.
+    Independently, **build runtime version negotiation regardless**: post-pivot the desktop
+    reports its version over the **localhost WS** → the PWA compares to the latest and
+    prompts/deep-links the right upgrade (the true "right version" fix; pivot-native, ~no new
+    infra). Runtime **pro**-gating stays the Clerk session `has({plan})` check — independent
+    of how the app was obtained (the free download funnel is about distribution, not pro
+    entitlement, which is already handled cloud-side).
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Captioner → OBS browser link** — a way for the browser-based captioner (PWA) to
