@@ -44,6 +44,9 @@ export interface CaptionerOptions {
   onUpdate: (msg: ServerMessage) => void;
   /** model-download progress (bytes), for a progress UI */
   onProgress?: (p: { loaded: number; total: number }) => void;
+  /** input signal level (~20 Hz) for a VU meter; reflects the live mic, so it
+   *  confirms a device hot-swap. `rms`/`peak` are linear 0..1. */
+  onLevel?: (level: { rms: number; peak: number }) => void;
 }
 
 /**
@@ -74,6 +77,10 @@ export class Captioner {
   private partialBusy = false;
 
   private sampleCount = 0;
+  // input-level metering (VU): accumulate peak + mean-square, emit ~20 Hz
+  private lvlPeak = 0;
+  private lvlSumSq = 0;
+  private lvlN = 0;
   private pending = new Map<string, (r: DecodeResult) => void>();
   private dictionary: string[] = [];
 
@@ -201,8 +208,28 @@ export class Captioner {
 
   // --- audio frame handling -------------------------------------------------
 
+  /** Accumulate a peak + RMS from each frame and emit ~20 Hz to `onLevel`. The
+   *  source node is swapped by {@link setDevice} without touching this path, so
+   *  the meter always reflects the currently-selected mic. */
+  private updateLevel(frame: Float32Array): void {
+    if (!this.opts.onLevel) return;
+    for (let i = 0; i < frame.length; i++) {
+      const a = frame[i] < 0 ? -frame[i] : frame[i];
+      if (a > this.lvlPeak) this.lvlPeak = a;
+      this.lvlSumSq += frame[i] * frame[i];
+    }
+    this.lvlN += frame.length;
+    if (this.lvlN >= this.rate * 0.05) {
+      this.opts.onLevel({ rms: Math.sqrt(this.lvlSumSq / this.lvlN), peak: this.lvlPeak });
+      this.lvlPeak = 0;
+      this.lvlSumSq = 0;
+      this.lvlN = 0;
+    }
+  }
+
   private onFrame(frame: Float32Array): void {
     this.sampleCount += frame.length;
+    this.updateLevel(frame);
     const ev = this.vad.process(frame);
 
     if (DEBUG && ev) {

@@ -808,6 +808,21 @@
     }
   });
 
+  // Live input level for the VU meter (reset when not capturing). Maps peak
+  // (linear 0..1) to a dBFS-scaled bar so normal speech reads mid-scale.
+  let level = $state<{ rms: number; peak: number }>({ rms: 0, peak: 0 });
+  const meterPct = $derived(
+    level.peak <= 0
+      ? 0
+      : Math.max(0, Math.min(100, ((20 * Math.log10(level.peak) + 60) / 60) * 100)),
+  );
+  const meterColor = $derived(
+    level.peak >= 0.98 ? "#e05a5a" : meterPct < 8 ? "#c9a227" : "#4caf6a",
+  );
+  const meterLabel = $derived(
+    level.peak >= 0.98 ? "clipping" : meterPct < 8 ? "very quiet — check mic/source" : "signal ✓",
+  );
+
   async function start() {
     captioner = new Captioner({
       model,
@@ -816,6 +831,7 @@
       dictionary: dictionaryTerms(),
       onUpdate: sink,
       onProgress: onModelProgress,
+      onLevel: (l) => (level = l),
     });
     running = true;
     try {
@@ -840,6 +856,7 @@
     captioner?.stop();
     captioner = null;
     running = false;
+    level = { rms: 0, peak: 0 };
     // A deliberate stop ends the recoverable session (a refresh shouldn't
     // resurrect it); an active room stays up until "Stop room".
     clearSession();
@@ -927,6 +944,18 @@
           </option>
         {/each}
       </select>
+      {#if running}
+        <div
+          class="vu"
+          title="Input level from the selected mic — speak into it to confirm the device"
+          style="height:8px;background:#1e1e22;border-radius:4px;overflow:hidden;margin-top:5px;"
+        >
+          <div
+            style="height:100%;width:{meterPct}%;background:{meterColor};transition:width .06s linear;"
+          ></div>
+        </div>
+        <span style="font-size:0.72rem;color:#888;">{meterLabel}</span>
+      {/if}
     </label>
 
     <label>
