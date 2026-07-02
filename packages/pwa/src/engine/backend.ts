@@ -27,8 +27,14 @@ export interface AsrBackend {
   load(model: string, opts?: LoadOptions): Promise<void>;
 
   /** Decode one 16 kHz mono clip. `words` requests word-level timing/confidence
-   *  (finals only — adds decode cost). Resolves `{ text: "" }` on decode error. */
-  transcribe(samples: Float32Array, opts: { words: boolean }): Promise<DecodeResult>;
+   *  (finals only — adds decode cost). `id` is the segment UUID Captioner
+   *  assigned to this utterance; a backend that refines (see `onRefine`) uses it
+   *  to tag the later refined result. WebGPU ignores it. Resolves `{ text: "" }`
+   *  on decode error. */
+  transcribe(
+    samples: Float32Array,
+    opts: { words: boolean; id: string },
+  ): Promise<DecodeResult>;
 
   /** Engine lifecycle status (loading/listening/error), produced by the backend
    *  so it can name its own backend/device. */
@@ -81,7 +87,12 @@ export class WorkerBackend implements AsrBackend {
     this.worker.postMessage({ type: "load", model, debug: opts?.debug ?? false });
   }
 
-  transcribe(samples: Float32Array, opts: { words: boolean }): Promise<DecodeResult> {
+  transcribe(
+    samples: Float32Array,
+    opts: { words: boolean; id: string },
+  ): Promise<DecodeResult> {
+    // The segment `id` is irrelevant here — the in-browser worker returns
+    // synchronously and has no refine pass. Correlation uses an internal reqId.
     const reqId = crypto.randomUUID();
     return new Promise((resolve) => {
       this.pending.set(reqId, resolve);

@@ -82,7 +82,10 @@ describe("LocalWsBackend", () => {
     const ws = MockWebSocket.last!;
     ws.fireOpen();
 
-    const pending = backend.transcribe(new Float32Array([0.1, 0.2, 0.3]), { words: true });
+    const pending = backend.transcribe(new Float32Array([0.1, 0.2, 0.3]), {
+      words: true,
+      id: "seg-abc",
+    });
     // The transcribe frame was sent as binary; recover its reqId to reply.
     const frame = ws.sent.find((s) => s instanceof ArrayBuffer) as ArrayBuffer;
     expect(frame).toBeInstanceOf(ArrayBuffer);
@@ -91,6 +94,45 @@ describe("LocalWsBackend", () => {
 
     ws.fireMessage(JSON.stringify({ type: "asrResult", reqId, text: "hello world" }));
     await expect(pending).resolves.toEqual({ text: "hello world", words: undefined });
+  });
+
+  it("maps a refined result's reqId back to the segment UUID", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const backend = new LocalWsBackend("ws://localhost:9999/ws");
+    const refined: Array<{ id: string; text: string }> = [];
+    backend.onRefine((id, r) => refined.push({ id, text: r.text }));
+    await backend.load("small.en");
+    const ws = MockWebSocket.last!;
+    ws.fireOpen();
+
+    // A final decode registers the reqId → segment-id mapping.
+    void backend.transcribe(new Float32Array([0.1]), { words: true, id: "seg-42" });
+    const { reqId } = decodeClipHeader(ws.sent.find((s) => s instanceof ArrayBuffer) as ArrayBuffer);
+
+    // The server refines it later, referencing only the reqId (never the UUID).
+    ws.fireMessage(JSON.stringify({ type: "asrRefined", reqId, text: "refined text" }));
+    expect(refined).toEqual([{ id: "seg-42", text: "refined text" }]);
+  });
+
+  it("does not track partials for refinement (no mapping ⇒ no onRefine)", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const backend = new LocalWsBackend("ws://localhost:9999/ws");
+    const refined: string[] = [];
+    backend.onRefine((id) => refined.push(id));
+    await backend.load("small.en");
+    const ws = MockWebSocket.last!;
+    ws.fireOpen();
+
+    // A partial (words:false) is not refinable and registers no mapping.
+    void backend.transcribe(new Float32Array([0.1]), { words: false, id: "seg-partial" });
+    const { reqId, final } = decodeClipHeader(
+      ws.sent.find((s) => s instanceof ArrayBuffer) as ArrayBuffer,
+    );
+    expect(final).toBe(false);
+
+    // An (erroneous) refine for that reqId has no mapping → onRefine must not fire.
+    ws.fireMessage(JSON.stringify({ type: "asrRefined", reqId, text: "x" }));
+    expect(refined).toEqual([]);
   });
 
   it("reports 'unavailable' (never falls back) when the socket closes", async () => {
@@ -111,19 +153,20 @@ describe("LocalWsBackend", () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     const backend = new LocalWsBackend();
     // No load()/open() → not connected.
-    await expect(backend.transcribe(new Float32Array([0.1]), { words: false })).resolves.toEqual({
-      text: "",
-    });
+    await expect(
+      backend.transcribe(new Float32Array([0.1]), { words: false, id: "seg-x" }),
+    ).resolves.toEqual({ text: "" });
   });
 
-  it("fires onRefine for a refined result", async () => {
+  it("ignores a refined result for an unknown reqId (never crashes)", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     const backend = new LocalWsBackend();
-    const refined: Array<{ id: string; text: string }> = [];
-    backend.onRefine((id, r) => refined.push({ id, text: r.text }));
+    const refined: string[] = [];
+    backend.onRefine((id) => refined.push(id));
     await backend.load("small.en");
     MockWebSocket.last!.fireOpen();
-    MockWebSocket.last!.fireMessage(JSON.stringify({ type: "asrRefined", id: "seg-1", text: "cleaned up" }));
-    expect(refined).toEqual([{ id: "seg-1", text: "cleaned up" }]);
+    // No transcribe was issued, so reqId 999 maps to nothing.
+    MockWebSocket.last!.fireMessage(JSON.stringify({ type: "asrRefined", reqId: 999, text: "x" }));
+    expect(refined).toEqual([]);
   });
 });

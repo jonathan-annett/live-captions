@@ -109,7 +109,10 @@ interface AsrResultMsg {
 }
 interface AsrRefinedMsg {
   type: "asrRefined";
-  id: string;
+  // Correlates to the original decode by its `reqId` — the server never sees the
+  // segment UUID. `LocalWsBackend` maps `reqId → id` locally and fires
+  // `onRefine` with the real UUID (see PIVOT-PLAN "Refinement correlation").
+  reqId: number;
   text: string;
   words?: Word[];
 }
@@ -140,6 +143,11 @@ export class LocalWsBackend implements AsrBackend {
   // u32 correlation counter (wraps); keys the pending-decode resolvers.
   private reqSeq = 1;
   private pending = new Map<number, (r: DecodeResult) => void>();
+  // `reqId → segment UUID` for finals only, so a later `asrRefined{reqId}` can
+  // fire `onRefine` with the real segment id. Outlives the immediate resolve;
+  // bounded (drop-oldest) so a refine that never arrives can't leak memory.
+  private reqToId = new Map<number, string>();
+  private static readonly MAX_REFINE_TRACKED = 256;
   private lastModel: { model: string; opts?: LoadOptions } | null = null;
 
   private statusCb?: (status: EngineStatus) => void;
@@ -165,14 +173,19 @@ export class LocalWsBackend implements AsrBackend {
     else this.open();
   }
 
-  transcribe(samples: Float32Array, opts: { words: boolean }): Promise<DecodeResult> {
+  transcribe(
+    samples: Float32Array,
+    opts: { words: boolean; id: string },
+  ): Promise<DecodeResult> {
     // Not connected → resolve empty so the Captioner never stalls waiting on a
     // server that isn't there. (The selector is already showing "unavailable".)
     if (!this.opened || !this.ws) return Promise.resolve({ text: "" });
     const reqId = this.nextReqId();
+    // `words` requested ⇔ this is a final decode (partials skip word timing).
+    // Only finals get refined, so only finals need the reqId → segment-id map.
+    if (opts.words) this.trackRefine(reqId, opts.id);
     return new Promise((resolve) => {
       this.pending.set(reqId, resolve);
-      // `words` requested ⇔ this is a final decode (partials skip word timing).
       this.ws!.send(encodeClipFrame(reqId, { final: opts.words }, samples));
     });
   }
@@ -185,12 +198,23 @@ export class LocalWsBackend implements AsrBackend {
     this.ws = null;
     this.opened = false;
     this.failPending();
+    this.reqToId.clear();
   }
 
   private nextReqId(): number {
     const id = this.reqSeq;
     this.reqSeq = this.reqSeq >= 0xffffffff ? 1 : this.reqSeq + 1;
     return id;
+  }
+
+  /** Remember `reqId → segment id` for a final decode, evicting the oldest entry
+   *  once the cap is hit (a refine that never arrives must not leak). */
+  private trackRefine(reqId: number, id: string): void {
+    if (this.reqToId.size >= LocalWsBackend.MAX_REFINE_TRACKED) {
+      const oldest = this.reqToId.keys().next().value;
+      if (oldest !== undefined) this.reqToId.delete(oldest);
+    }
+    this.reqToId.set(reqId, id);
   }
 
   private open(): void {
@@ -256,9 +280,13 @@ export class LocalWsBackend implements AsrBackend {
         resolve?.({ text: msg.text ?? "", words: msg.words });
         break;
       }
-      case "asrRefined":
-        this.refineCb?.(msg.id, { text: msg.text ?? "", words: msg.words });
+      case "asrRefined": {
+        // Map the server's reqId back to the segment UUID the browser owns.
+        const id = this.reqToId.get(msg.reqId);
+        this.reqToId.delete(msg.reqId);
+        if (id !== undefined) this.refineCb?.(id, { text: msg.text ?? "", words: msg.words });
         break;
+      }
       case "asrStatus":
         this.statusCb?.(msg.status);
         break;

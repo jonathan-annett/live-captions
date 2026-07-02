@@ -297,7 +297,7 @@ export class Captioner {
       this.logDrop("final", "no-speech gate", a);
       return;
     }
-    void this.backend.transcribe(snap.samples, { words: true }).then(({ text, words }) => {
+    void this.backend.transcribe(snap.samples, { words: true, id: snap.meta.id }).then(({ text, words }) => {
       const degen = isDegenerate(text);
       if (DEBUG) console.log(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
       if (text && !degen) {
@@ -325,7 +325,7 @@ export class Captioner {
       this.logDrop("partial", "no-speech gate", a);
       return;
     }
-    void this.backend.transcribe(snap.samples, { words: false }).then(({ text }) => {
+    void this.backend.transcribe(snap.samples, { words: false, id: snap.meta.id }).then(({ text }) => {
       this.partialBusy = false;
       const degen = isDegenerate(text);
       if (text && !degen && this.currentId === snap.meta.id) {
