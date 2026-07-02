@@ -116,21 +116,37 @@ keystone — every later phase hangs off it.
   tab on localhost captions through Python (heavy model + refine). BlackHole
   loopback still works as the "mic" via getUserMedia.
 
-### P3 — Desktop app = Python + browser on the unified frontend
+### P3 — Desktop shell split (DECIDED 2026-07-02): control in the browser, display native + LAN
 
-- Desktop launches the Python server and opens the **full PWA** preset to
-  `backend = local server` — not the bespoke `/control` panel.
-- **Decision (P3):** shell = keep pywebview vs. open the system browser.
-  - Real browser ⇒ kills the native-webview bug class (blob downloads,
-    control-window click/drag, `private_mode` wipe) but loses the bundled
-    native-app feel.
-  - pywebview shell ⇒ keeps bundling/installers (M8) but retains WKWebView bugs
-    unless exports are routed through the backend.
-  - Deferred to P3; not needed to prove P0–P2.
-- **Retire the desktop-specific `/control` panel** (`packages/display` control
-  surface) in favor of the PWA operator UI — the core unification payoff. This
+Not one shell — **two surfaces with different jobs**:
+
+- **Control = the PWA in a real browser.** It is both the interactive operator
+  surface and the surface that *must stay open* (capture — getUserMedia +
+  AudioWorklet — lives in the tab). Putting control there gives the operator a
+  reason to keep the tab foreground; a headless capture-only tab would get
+  closed/ignored and lose the session. Real browser also means blob exports work
+  and the WKWebView bug class (blob downloads, click/drag, `private_mode` wipe)
+  never applies to the interactive surface. Desktop launches the Python server
+  and opens the full PWA preset to `backend = local server`.
+- **Display = native fullscreen / webview projector output, LAN-exposed.** Kept
+  native because it renders projection/chroma far better than a browser tab.
+  Served by the local server bound to the LAN so **venue OBS machines and other
+  displays subscribe to the same output surface over the network**. It is
+  output-only, so the WKWebView blob-download bug is moot there.
+- **How they connect — the display is just another hub subscriber.** Control PWA
+  → clips → Python `ClipDecoder` → hub emits finals → hub fans out over WS → the
+  native fullscreen window *and* any LAN browser/OBS render the same feed. No new
+  mechanism; reuses the existing `packages/display` render surface + hub-subscribe
+  path. (Pure-cloud PWA keeps its BroadcastChannel `display.html`; the
+  desktop/LAN case uses the hub WS — two delivery paths for one render surface.)
+- **Retire only the bespoke desktop `/control` panel** (the `packages/display`
+  control surface) in favor of the PWA operator UI — the unification payoff that
   closes the PWA↔desktop parity-drift problem (`AUDIT-pwa-vs-desktop.md`) by
-  construction.
+  construction. The `packages/display` **output** surface is retained.
+- **Note — background-tab throttling:** browsers throttle background tabs, but
+  the AudioWorklet runs on the audio thread so capture keeps going; keeping
+  control in the foreground tab (above) is the mitigation. Watch UI timers/render
+  under backgrounding.
 - Mic selection moves browser-side (getUserMedia device picker + existing VU
   meter). Python `sounddevice` capture is retained behind a flag for
   headless/hi-fi/appliance modes only.
