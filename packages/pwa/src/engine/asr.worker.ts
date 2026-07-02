@@ -111,6 +111,9 @@ async function loadOnce(model: string): Promise<void> {
         device,
         dtype: dtypeFor(model, device, f16),
         progress_callback,
+        // Hush ORT's benign per-session Warning noise (e.g. "shape ops on CPU")
+        // so genuine errors aren't buried. 3 = Error; errors/fatals still log.
+        session_options: { logSeverityLevel: 3 },
       });
       post({ type: "ready", device, model });
       return;
