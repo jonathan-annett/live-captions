@@ -35,6 +35,10 @@ export interface CaptionerOptions {
   deviceId?: string;
   /** event-specific names/jargon to bias recognized text toward */
   dictionary?: string[];
+  /** Capture the raw mic signal — disable the browser's echoCancellation /
+   *  noiseSuppression / autoGainControl DSP (they distort captioning + archive
+   *  audio). Defaults to true (processing off). */
+  rawCapture?: boolean;
   /** called for every emitted message (UI preview) */
   onUpdate: (msg: ServerMessage) => void;
   /** model-download progress (bytes), for a progress UI */
@@ -95,6 +99,19 @@ export class Captioner {
     this.dictionary = terms;
   }
 
+  /** Mic constraints shared by start() and setDevice(). Processing DSP is off by
+   *  default (rawCapture); flip it on only if the operator opts in. */
+  private audioConstraints(deviceId?: string): MediaTrackConstraints {
+    const processing = this.opts.rawCapture === false; // default: raw (off)
+    return {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      channelCount: 1,
+      echoCancellation: processing,
+      noiseSuppression: processing,
+      autoGainControl: processing,
+    };
+  }
+
   private correct(text: string): string {
     return this.dictionary.length ? correctText(text, this.dictionary) : text;
   }
@@ -113,13 +130,7 @@ export class Captioner {
     await this.backend.load(this.opts.model, { debug: DEBUG });
 
     this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: this.opts.deviceId ? { exact: this.opts.deviceId } : undefined,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+      audio: this.audioConstraints(this.opts.deviceId),
     });
 
     this.audioCtx = new AudioContext({ sampleRate: TARGET_RATE });
@@ -164,13 +175,7 @@ export class Captioner {
     if (!this.audioCtx || !this.node) return; // not running → applies on next start
     if (this.inUtterance) this.finishUtterance();
     const next = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
+      audio: this.audioConstraints(deviceId),
     });
     this.source?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());

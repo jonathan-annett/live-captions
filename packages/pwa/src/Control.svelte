@@ -71,6 +71,9 @@
   // ASR backend: on-device WebGPU (cloud, no install) vs a localhost Python
   // server over WebSocket (desktop; heavy models + refine — see PIVOT-PLAN.md).
   const LS_ASR_BACKEND = "cg.asrBackend";
+  // Raw capture: disable the browser's echo-cancel/noise-suppression/AGC DSP,
+  // which distorts captioning + archive audio. Default on (processing off).
+  const LS_RAW_CAPTURE = "cg.rawCapture";
   const lsGet = (k: string): string | null => {
     try {
       return localStorage.getItem(k);
@@ -104,11 +107,14 @@
   // selector is disabled while running, so switching means stop → change → start
   // (stop() closes the old backend, start() constructs the new one).
   let asrBackend = $state<string>(lsGet(LS_ASR_BACKEND) ?? "webgpu");
+  // Default on (raw) unless the operator explicitly turned it off.
+  let rawCapture = $state<boolean>(lsGet(LS_RAW_CAPTURE) !== "off");
 
   // Save selections as they change.
   $effect(() => lsSet(LS_MODEL, model));
   $effect(() => lsSet(LS_DEVICE, deviceId));
   $effect(() => lsSet(LS_ASR_BACKEND, asrBackend));
+  $effect(() => lsSet(LS_RAW_CAPTURE, rawCapture ? "on" : "off"));
 
   // --- room publishing ------------------------------------------------------
   // A publish target can come from the page URL (?publish=<url> or
@@ -844,6 +850,7 @@
         channel: CHANNEL,
         deviceId: deviceId || undefined,
         dictionary: dictionaryTerms(),
+        rawCapture,
         onUpdate: sink,
         onProgress: onModelProgress,
         onLevel: (l) => (level = l),
@@ -973,6 +980,11 @@
         </div>
         <span style="font-size:0.72rem;color:#888;">{meterLabel}</span>
       {/if}
+    </label>
+
+    <label class="check">
+      <input type="checkbox" bind:checked={rawCapture} disabled={running} />
+      Raw capture (no echo-cancel / noise-suppression / auto-gain)
     </label>
 
     <label>
