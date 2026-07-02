@@ -63,6 +63,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "to start IDLE — configure models in the control panel, then click Start.",
     )
     serve.add_argument(
+        "--asr-server",
+        action="store_true",
+        help="run as a pure clip-decode ASR backend (the unified-frontend pivot): "
+        "no local mic capture — the browser (PWA with backend='local server') owns "
+        "capture/VAD/framing and streams utterance clips over the WS; this process "
+        "just decodes them and returns text (+ optional refine). Implies autostart.",
+    )
+    serve.add_argument(
         "--record",
         nargs="?",
         const="",
@@ -188,35 +196,50 @@ def _serve(args: argparse.Namespace) -> None:
                 args.refine_engine or args.engine, model=model, device=args.device
             )
 
-        engine = make_engine(args.model)
-        refiner = None
-        refine_model = None
-        if args.refine:
-            from .refine import RefinementPass
+        if args.asr_server:
+            # Pivot: the browser owns capture; this process only decodes clips.
+            from .clip_decoder import ClipDecoder
 
-            refine_model = args.refine_model or args.model
-            refiner = RefinementPass(hub, make_refine_engine(refine_model))
-        record_dir = None
-        if args.record is not None:
-            from .paths import sessions_dir
+            refine_model = (args.refine_model or args.model) if args.refine else None
+            controller = ClipDecoder(
+                make_engine,
+                args.model,
+                make_refine_engine=make_refine_engine,
+                refine_model=refine_model,
+            )
+            engine_desc = f"clip-decode ASR server ({args.model})"
+            if refine_model is not None:
+                engine_desc += f" + refine ({refine_model})"
+        else:
+            engine = make_engine(args.model)
+            refiner = None
+            refine_model = None
+            if args.refine:
+                from .refine import RefinementPass
 
-            record_dir = args.record or str(sessions_dir())
-        controller = LiveStreamer(
-            hub,
-            engine,
-            device=args.mic,
-            refiner=refiner,
-            make_engine=make_engine,
-            make_refine_engine=make_refine_engine,
-            model=args.model,
-            refine_model=refine_model,
-            record_dir=record_dir,
-        )
-        engine_desc = f"{engine.__class__.__name__} ({args.model})"
-        if record_dir is not None:
-            engine_desc += f" + record ({record_dir})"
-        if refiner is not None:
-            engine_desc += f" + refine ({refine_model})"
+                refine_model = args.refine_model or args.model
+                refiner = RefinementPass(hub, make_refine_engine(refine_model))
+            record_dir = None
+            if args.record is not None:
+                from .paths import sessions_dir
+
+                record_dir = args.record or str(sessions_dir())
+            controller = LiveStreamer(
+                hub,
+                engine,
+                device=args.mic,
+                refiner=refiner,
+                make_engine=make_engine,
+                make_refine_engine=make_refine_engine,
+                model=args.model,
+                refine_model=refine_model,
+                record_dir=record_dir,
+            )
+            engine_desc = f"{engine.__class__.__name__} ({args.model})"
+            if record_dir is not None:
+                engine_desc += f" + record ({record_dir})"
+            if refiner is not None:
+                engine_desc += f" + refine ({refine_model})"
 
     terms = _parse_dictionary(args.dictionary)
     if terms:
@@ -252,7 +275,8 @@ def _serve(args: argparse.Namespace) -> None:
         room_base=room_base,
         viewer_base=viewer_base,
         qr_png_path=args.qr_png_path,
-        autostart=args.autostart,
+        # The clip-decode backend must be listening for incoming clips.
+        autostart=args.autostart or args.asr_server,
     )
 
     transparent = args.background == "transparent"
@@ -264,6 +288,9 @@ def _serve(args: argparse.Namespace) -> None:
     print(f"  frontend: {web_dir or '(not built — see / for help)'}")
     print(f"  display:  {url}")
     print(f"  ws:       {base}/ws   history: {base}/history")
+    if args.asr_server:
+        print("  mode:     clip-decode ASR server — browser owns capture "
+              "(PWA backend='local server'); no local mic")
     if publish_url:
         print(f"  room:     relaying captions to {publish_url}")
     if join_url:
