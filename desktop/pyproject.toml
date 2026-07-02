@@ -24,8 +24,12 @@ server = [
   "numpy>=1.26",
 ]
 # Mic capture (needs PortAudio); separate so server/tests install without it.
+# soundfile + soxr power the opt-in hi-fi session recorder (serve --record):
+# native-rate FLAC writing + the native→16 kHz downsample tee for ASR.
 audio = [
   "sounddevice>=0.4.7",
+  "soundfile>=0.12",
+  "soxr>=0.3",
 ]
 asr = [
   "faster-whisper>=1.0.3",

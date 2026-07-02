@@ -26,15 +26,9 @@ def _webview_storage_dir() -> str:
     that is wiped when the window closes, so every launch snapped those prefs back
     to defaults. Pointing ``storage_path`` at a stable dir (with private mode off)
     keeps them."""
-    if sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    elif os.name == "nt":
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-    else:
-        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-    d = base / "CaptionGuru" / "webview"
-    d.mkdir(parents=True, exist_ok=True)
-    return str(d)
+    from .paths import app_data_dir
+
+    return str(app_data_dir("webview"))
 
 
 # ---------------------------------------------------------------------------

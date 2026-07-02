@@ -11,13 +11,17 @@ Both honor the ``Controller`` protocol the server's control channel drives.
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from .engines.base import ASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, EngineStatus, Word
+from .recorder import SessionRecorder
 from .refine import RefinementPass
 from .sanitize import is_degenerate, is_likely_speech
 from .vad import EnergyVAD
@@ -50,6 +54,19 @@ def list_input_devices() -> list[dict]:
                 {"index": i, "name": str(d.get("name", f"device {i}")), "channels": channels}
             )
     return out
+
+
+def _native_rate(device: Optional[int]) -> Optional[int]:
+    """The input device's default samplerate (Hz), or None if undeterminable.
+    ``device=None`` = the system default input."""
+    try:
+        import sounddevice as sd
+
+        info = sd.query_devices(device, "input")
+        rate = int(round(float(info["default_samplerate"])))
+        return rate if rate > 0 else None
+    except Exception:  # noqa: BLE001 - no PortAudio / bad device
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -138,10 +155,12 @@ class LiveStreamer:
         make_refine_engine: Optional[Callable[[str], ASREngine]] = None,
         model: Optional[str] = None,
         refine_model: Optional[str] = None,
+        record_dir: Optional[str] = None,
     ) -> None:
         self.hub = hub
         self.engine = engine
         self.sample_rate = sample_rate
+        self.block_ms = block_ms
         self.block = int(sample_rate * block_ms / 1000)
         self.device = device
         self.refiner = refiner
@@ -177,6 +196,18 @@ class LiveStreamer:
         # utterances, discard the buffered silence to catch up to the live edge.
         self._catchup_frames = max(1, int(1.5 * sample_rate / self.block))
 
+        # --- hi-fi session recording (post-production P1; opt-in) -------------
+        # When record_dir is set, capture at the device's NATIVE rate and tee a
+        # 16 kHz downsample to ASR; otherwise the capture path is byte-identical
+        # to before. A "session" = operator Start→Stop; set_model/set_device do an
+        # internal stop→start that must NOT split the recording (see _internal_restart).
+        self._record_dir = record_dir
+        self._recorder: Optional[SessionRecorder] = None
+        self._session_dir: Optional[Path] = None
+        self._session_meta: dict = {}
+        self._internal_restart = False
+        self._capture_rate = sample_rate  # native capture rate when recording
+
     def set_dictionary(self, terms: list[str]) -> None:
         self.dictionary = terms
         if self.refiner is not None:
@@ -193,6 +224,7 @@ class LiveStreamer:
             return
         running = self._running.is_set()
         if running:
+            self._internal_restart = True  # keep the recording session intact
             self.stop()  # tears down capture + refiner; emits idle
         self.model = model
         self.engine = self._make_engine(model)
@@ -207,6 +239,7 @@ class LiveStreamer:
             self.refine_model = want
         if running:
             self.start()  # reloads + warms the new engine(s), restarts capture
+            self._internal_restart = False
 
     def set_device(self, device: Optional[int]) -> None:
         """Switch the audio input device (index; None = system default). If
@@ -217,10 +250,12 @@ class LiveStreamer:
             return
         running = self._running.is_set()
         if running:
+            self._internal_restart = True  # keep the recording session intact
             self.stop()  # closes the current mic stream; emits idle
         self.device = device
         if running:
             self.start()  # reopens capture on the new device (model already warm-loads)
+            self._internal_restart = False
 
     def get_input_device(self) -> Optional[int]:
         return self.device
@@ -254,20 +289,54 @@ class LiveStreamer:
         self._frames = queue.Queue(maxsize=256)
         self._running.set()
 
-        def callback(indata, _frames, _time, _status):  # sounddevice thread
-            try:
-                self._frames.put_nowait(indata[:, 0].copy())
-            except queue.Full:
-                pass
+        # Recording (opt-in) inverts capture: open at the device's NATIVE rate and
+        # tee a 16 kHz downsample to ASR. Without it, the path below is byte-for-byte
+        # the same InputStream + callback as before.
+        if self._record_dir is not None:
+            self._begin_or_resume_session()
 
-        self._stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=self.block,
-            device=self.device,
-            callback=callback,
-        )
+        if self._recorder is not None:
+            import soxr  # lazy — only the recording tee needs it
+
+            capture_rate = self._capture_rate
+            asr_rate = self.sample_rate
+            recorder = self._recorder
+
+            def callback(indata, _frames, _time, _status):  # sounddevice thread
+                native = indata[:, 0].copy()
+                recorder.submit(native)  # hi-fi archive (native rate)
+                try:
+                    asr = soxr.resample(native, capture_rate, asr_rate).astype(
+                        np.float32, copy=False
+                    )
+                    self._frames.put_nowait(asr)  # 16 kHz feed for the VAD/ASR
+                except queue.Full:
+                    pass
+
+            self._stream = sd.InputStream(
+                samplerate=capture_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=int(capture_rate * self.block_ms / 1000),
+                device=self.device,
+                callback=callback,
+            )
+        else:
+
+            def callback(indata, _frames, _time, _status):  # sounddevice thread
+                try:
+                    self._frames.put_nowait(indata[:, 0].copy())
+                except queue.Full:
+                    pass
+
+            self._stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype="float32",
+                blocksize=self.block,
+                device=self.device,
+                callback=callback,
+            )
         self._stream.start()
 
         self._worker = threading.Thread(target=self._run, daemon=True)
@@ -284,7 +353,99 @@ class LiveStreamer:
             self._worker = None
         if self.refiner is not None:
             self.refiner.stop()
+        # Close the recording + write the bundle manifest ONLY on an operator stop —
+        # a model/device hot-swap does an internal stop→start and must keep recording.
+        if self._recorder is not None and not self._internal_restart:
+            self._end_session()
         self.hub.emit_status(EngineStatus(state="idle"))
+
+    # --- hi-fi session recording --------------------------------------------
+
+    def _begin_or_resume_session(self) -> None:
+        """Ensure a recording session + recorder exist for this capture run.
+
+        Fresh operator start → mint a bundle dir + recorder. Internal restart
+        (model/device swap) → keep the existing session; if a device swap changed
+        the native rate, roll to a new part. If the recording deps aren't installed,
+        disable recording for the session (live captions continue unaffected)."""
+        native = _native_rate(self.device) or self.sample_rate
+        if self._internal_restart and self._recorder is not None:
+            if native != self._capture_rate:
+                self._recorder.roll(native)
+                self._capture_rate = native
+            return
+        self._capture_rate = native
+        try:
+            self._start_new_session()
+        except Exception as exc:  # noqa: BLE001 - recording is best-effort
+            print(
+                f"  record:   disabled — {exc} "
+                "(install the 'audio' extra: soundfile + soxr)",
+                flush=True,
+            )
+            self._recorder = None
+            self._session_dir = None
+
+    def _start_new_session(self) -> None:
+        now = datetime.now(timezone.utc)
+        sid = f"{now.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        bundle = Path(self._record_dir) / sid  # type: ignore[arg-type]
+        bundle.mkdir(parents=True, exist_ok=True)
+        recorder = SessionRecorder(bundle, self._capture_rate)
+        recorder.start()  # raises if soundfile is missing → caught by caller
+        self._recorder = recorder
+        self._session_dir = bundle
+        self._session_meta = {
+            "id": sid,
+            "startedAt": now.isoformat(),
+            "asrRate": self.sample_rate,
+            "model": self.model,
+            "refineModel": self.refine_model,
+            "device": self.device,
+            "format": recorder.fmt,
+        }
+        print(f"  record:   session {sid} → {bundle}", flush=True)
+
+    def _end_session(self) -> None:
+        recorder = self._recorder
+        bundle = self._session_dir
+        self._recorder = None
+        self._session_dir = None
+        if recorder is None or bundle is None:
+            return
+        try:
+            recorder.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self._write_bundle_meta(bundle, recorder)
+            print(f"  record:   session saved → {bundle}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"  record:   failed to finalize {bundle} — {exc}", flush=True)
+
+    def _write_bundle_meta(self, bundle: Path, recorder: SessionRecorder) -> None:
+        # segments.json — the canonical log, same serialization as GET /history.
+        segments = [
+            s.model_dump(by_alias=True, exclude_none=True) for s in self.hub.history()
+        ]
+        (bundle / "segments.json").write_text(
+            json.dumps({"segments": segments}, indent=2)
+        )
+        # session.json — manifest the offline post-production pass (P2/P3) reads.
+        meta = dict(self._session_meta)
+        meta["stoppedAt"] = datetime.now(timezone.utc).isoformat()
+        meta["parts"] = recorder.parts
+        meta["framesWritten"] = recorder.frames_written
+        if recorder.dropped:
+            meta["droppedBlocks"] = recorder.dropped
+        meta["clockNote"] = (
+            "segments.json start/end are ASR-clock seconds (sample_count / asrRate). "
+            "The recording is wall-continuous native audio; in normal operation the two "
+            "align to within VAD granularity. Under sustained ASR-queue overload the ASR "
+            "clock can lag the recording — WhisperX (P2) forced-alignment resolves fine "
+            "word timings against the full audio regardless."
+        )
+        (bundle / "session.json").write_text(json.dumps(meta, indent=2))
 
     def _run(self) -> None:
         import queue

@@ -62,6 +62,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="begin captioning immediately on launch (turnkey display). Default is "
         "to start IDLE — configure models in the control panel, then click Start.",
     )
+    serve.add_argument(
+        "--record",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="DIR",
+        help="record the session's hi-fi (native-rate) audio + a transcript bundle "
+        "for offline post-production. Bare --record uses the default app-data dir; "
+        "--record DIR writes session bundles under DIR. Off by default.",
+    )
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
     serve.add_argument(
@@ -186,6 +196,11 @@ def _serve(args: argparse.Namespace) -> None:
 
             refine_model = args.refine_model or args.model
             refiner = RefinementPass(hub, make_refine_engine(refine_model))
+        record_dir = None
+        if args.record is not None:
+            from .paths import sessions_dir
+
+            record_dir = args.record or str(sessions_dir())
         controller = LiveStreamer(
             hub,
             engine,
@@ -195,8 +210,11 @@ def _serve(args: argparse.Namespace) -> None:
             make_refine_engine=make_refine_engine,
             model=args.model,
             refine_model=refine_model,
+            record_dir=record_dir,
         )
         engine_desc = f"{engine.__class__.__name__} ({args.model})"
+        if record_dir is not None:
+            engine_desc += f" + record ({record_dir})"
         if refiner is not None:
             engine_desc += f" + refine ({refine_model})"
 
