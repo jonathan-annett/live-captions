@@ -59,6 +59,13 @@
   ];
   const availableModels = MODELS.filter((m) => !m.experimental || EXPERIMENTAL);
   const selectedModel = $derived(MODELS.find((m) => m.id === model));
+  // Local-server (Python) models are SHORT NAMES (small.en …) that the server
+  // resolves to the right MLX/CTranslate2 repo. They must NEVER be the WebGPU ONNX
+  // ids above: MLX passes a "/"-containing id straight through and would
+  // snapshot_download that entire ONNX repo (~2.6 GB of quant variants) instead of
+  // the cached mlx-community/whisper-*-mlx. This fallback mirrors Python's
+  // DEFAULT_ASR_MODELS and is used until the server advertises via `asrModels`.
+  const DEFAULT_LOCAL_MODELS = ["tiny.en", "small.en", "medium.en", "large-v3", "large-v3-turbo"];
 
   const appName = location.hostname.endsWith("caption.guru")
     ? "Caption Guru"
@@ -67,6 +74,10 @@
   // Persist the operator's model + mic choices so a reload doesn't snap back to
   // the default (base.en, the weakest model) — that was skewing test results.
   const LS_MODEL = "cg.model";
+  // Local-server model is persisted separately from the WebGPU model so the two
+  // backends never cross-contaminate (an ONNX id must never reach the local server).
+  const LS_MODEL_LOCAL = "cg.modelLocal";
+  const LS_SERVER_MODELS = "cg.serverModels";
   const LS_DEVICE = "cg.deviceId";
   // ASR backend: on-device WebGPU (cloud, no install) vs a localhost Python
   // server over WebSocket (desktop; heavy models + refine — see PIVOT-PLAN.md).
@@ -100,6 +111,24 @@
       ? storedModel!
       : (availableModels[1] ?? availableModels[0]!).id,
   );
+  // Local-server model (short name) + the server's advertised list (persisted so the
+  // idle picker can show it before the next connect). Seeded to small.en / fallback.
+  let localModel = $state<string>(lsGet(LS_MODEL_LOCAL) ?? "small.en");
+  let serverModels = $state<string[]>(
+    (() => {
+      try {
+        const v = lsGet(LS_SERVER_MODELS);
+        const arr = v ? (JSON.parse(v) as unknown) : null;
+        return Array.isArray(arr) ? (arr as string[]) : [];
+      } catch {
+        return [];
+      }
+    })(),
+  );
+  const localModelOptions = $derived(serverModels.length ? serverModels : DEFAULT_LOCAL_MODELS);
+  // Never send a "/"-containing (repo) id or an unlisted name to the local server.
+  const coerceLocalModel = (m: string, opts: string[]): string =>
+    opts.includes(m) && !m.includes("/") ? m : (opts[0] ?? "small.en");
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
@@ -112,6 +141,7 @@
 
   // Save selections as they change.
   $effect(() => lsSet(LS_MODEL, model));
+  $effect(() => lsSet(LS_MODEL_LOCAL, localModel));
   $effect(() => lsSet(LS_DEVICE, deviceId));
   $effect(() => lsSet(LS_ASR_BACKEND, asrBackend));
   $effect(() => lsSet(LS_RAW_CAPTURE, rawCapture ? "on" : "off"));
@@ -843,10 +873,28 @@
     // Construct the chosen backend fresh per session; stop() closes it. When
     // "local" can't reach the Python server it reports an "unavailable" status
     // (surfaced via the status pill) rather than falling back to WebGPU.
-    const backend = asrBackend === "local" ? new LocalWsBackend() : new WorkerBackend();
+    const isLocal = asrBackend === "local";
+    const backend = isLocal ? new LocalWsBackend() : new WorkerBackend();
+    // Per-backend model: the local server takes SHORT NAMES only — never an ONNX id,
+    // which MLX would pass-through-download as a ~2.6 GB repo. Coerce defensively.
+    let startModel = model;
+    if (isLocal) {
+      startModel = coerceLocalModel(localModel, localModelOptions);
+      localModel = startModel;
+      if (backend instanceof LocalWsBackend) {
+        // Seed from anything already advertised, then track the live list so the
+        // picker reflects the server and the selection stays valid against it.
+        if (backend.models.length) serverModels = backend.models;
+        backend.onModels((ms) => {
+          serverModels = ms;
+          lsSet(LS_SERVER_MODELS, JSON.stringify(ms));
+          if (ms.length && !ms.includes(localModel)) localModel = coerceLocalModel(localModel, ms);
+        });
+      }
+    }
     captioner = new Captioner(
       {
-        model,
+        model: startModel,
         channel: CHANNEL,
         deviceId: deviceId || undefined,
         dictionary: dictionaryTerms(),
@@ -1002,18 +1050,29 @@
 
     <label>
       Model
-      <select bind:value={model} disabled={running}>
-        {#each availableModels as m (m.id)}
-          <option value={m.id}>{m.label} · {m.size}</option>
-        {/each}
-      </select>
-      {#if selectedModel}
+      {#if asrBackend === "local"}
+        <!-- Local server: SHORT NAMES advertised by Python (asrModels), never the
+             WebGPU ONNX ids — sending one would make MLX download a ~2.6 GB repo. -->
+        <select bind:value={localModel} disabled={running}>
+          {#each localModelOptions as m (m)}
+            <option value={m}>{m}</option>
+          {/each}
+        </select>
         <small class="hint-inline">
-          {selectedModel.size} download, once — then cached on this device.
+          Served by the local Python backend{serverModels.length ? "" : " (default list)"}.
         </small>
+      {:else}
+        <select bind:value={model} disabled={running}>
+          {#each availableModels as m (m.id)}
+            <option value={m.id}>{m.label} · {m.size}</option>
+          {/each}
+        </select>
+        {#if selectedModel}
+          <small class="hint-inline">
+            {selectedModel.size} download, once — then cached on this device.
+          </small>
+        {/if}
       {/if}
-      <!-- P2: when asrBackend === "local", the model list comes from the Python
-           server (asrModels advertisement) instead of the WebGPU MODELS above. -->
     </label>
 
     <label>
