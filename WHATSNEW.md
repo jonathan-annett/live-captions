@@ -54,6 +54,13 @@ runners are deprecated.
 - **Double-start guard** on the streamer; server **starts idle by default**
   (`--autostart` for turnkey); surfaces a failed refine-model load instead of
   swallowing it.
+- **Panel prefs now persist across restarts** — look/colours, model, mic, and QR
+  choices were being wiped every launch because the native windows ran under
+  pywebview's default *private mode* (an ephemeral store); now persisted to a
+  stable app data dir. The mic selection is remembered by device name.
+- **Control window no longer drops clicks/drags** on macOS — it's created as
+  pywebview's *master* window so it owns the Cocoa run loop and stays responsive
+  (previously the secondary window intermittently ignored input until refocused).
 
 ### Changed
 - Default `serve` = `small.en` live, **refine OFF** by default — two-tier refine
