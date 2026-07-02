@@ -80,7 +80,8 @@ Tiers, building on that one backbone:
     `/hf` proxy, smoke-test in the ASR worker, registry in browser storage (reuses the
     existing PWA download-progress UI); **desktop** = HF download + smoke-test via a transient
     engine, disk registry, driven over the control WS (`installModel`/`removeModel`/
-    `requestModels`, protocol **v10**). The caching mechanism (CTranslate2 / MLX / ONNX) is
+    `requestModels`, protocol **v11+** — v10 is now the ASR clip-decode bump). The caching
+    mechanism (CTranslate2 / MLX / ONNX) is
     fully abstracted from the user.
   - **Three places the abstraction legitimately leaks — the same UI must handle honestly:**
     (1) **practicality differs** — `small.en` is the sane in-browser ceiling, `large-v3` is
