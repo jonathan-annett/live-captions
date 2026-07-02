@@ -202,3 +202,39 @@ def test_dictionary_passed_as_hotwords():
     streamer._sample_count = 16000
     streamer._decode(final=True)
     assert engine.hotwords == "Kubernetes, Anthropic"
+
+
+def test_flush_on_stop_finalizes_an_open_utterance():
+    """A session that stops mid-utterance — long continuous speech that never hit
+    a VAD endpoint or the max-utter force-commit — must still yield a final.
+    Without flush-on-stop the worker exits leaving the utterance unfinalized, so
+    history()/segments.json is empty. Regression for the record-mode empty-
+    transcript bug (also relies on submit() recording finals synchronously so the
+    flush is visible even though stop() blocks the loop while joining the worker)."""
+    import queue
+    import threading
+    import time
+
+    hub = CaptionHub()  # no event loop → submit() records finals synchronously
+    engine = _FakeEngine(TranscribeResult(text="flush caption"))
+    streamer = LiveStreamer(hub, engine, sample_rate=16000)
+    streamer._frames = queue.Queue(maxsize=256)
+    # Simulate an utterance left open at stop (as if speech was still in flight).
+    streamer._in_utter = True
+    streamer._current_id = "u-open"
+    streamer._utter = [_SPEECH]
+    streamer._utter_n = 16000
+    streamer._utter_start = 0
+    streamer._sample_count = 16000
+    streamer._running.set()
+    worker = threading.Thread(target=streamer._run, daemon=True)
+    streamer._worker = worker
+    worker.start()
+    time.sleep(0.05)  # let the worker enter its (empty-queue) loop
+
+    streamer.stop()  # clears _running → worker exits loop → flush-on-stop
+
+    hist = hub.history()
+    assert len(hist) == 1, "flush-on-stop must finalize the open utterance"
+    assert hist[0].text == "flush caption"
+    assert not streamer._in_utter

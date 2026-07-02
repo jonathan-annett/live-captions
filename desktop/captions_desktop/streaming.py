@@ -349,7 +349,9 @@ class LiveStreamer:
             self._stream.close()
             self._stream = None
         if self._worker:
-            self._worker.join(timeout=2.0)
+            # Generous timeout: the worker runs a flush-on-stop final decode after
+            # the loop exits (bounded — the in-flight clip is capped at _max_utter).
+            self._worker.join(timeout=8.0)
             self._worker = None
         if self.refiner is not None:
             self.refiner.stop()
@@ -460,6 +462,15 @@ class LiveStreamer:
             # drop it to snap back to the live edge (no speech lost).
             if not self._in_utter and self._frames.qsize() > self._catchup_frames:
                 self._catch_up()
+        # Flush a still-open utterance on stop so its final caption isn't lost.
+        # Without this, a session that ends mid-utterance — especially long
+        # continuous speech that never hit a VAD endpoint or the max-utter
+        # force-commit (e.g. under record-mode's added callback latency) — yields
+        # NO finals at all, leaving segments.json empty. Runs in this worker
+        # thread; the hub records the final synchronously so stop()'s bundle write
+        # (which joins us) sees it.
+        if self._in_utter:
+            self._finish_utterance()
 
     def _catch_up(self) -> None:
         import queue

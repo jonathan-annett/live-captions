@@ -34,6 +34,16 @@ def test_dispatch_records_finals_in_history():
     assert [s.id for s in hub.history()] == ["a", "b"]
 
 
+def test_submit_records_final_synchronously_without_a_loop():
+    """submit() must update the durable log synchronously even with no event loop
+    bound — otherwise a bundle write during stop() (which blocks the loop while it
+    joins the ASR worker's flush) sees an empty history. Regression for the
+    record-mode empty-transcript bug."""
+    hub = CaptionHub()  # no bind_loop → loop is None
+    hub.submit(_final("a", 0, 1, "live"))
+    assert [s.id for s in hub.history()] == ["a"]
+
+
 def test_history_since_filters_by_end():
     hub = CaptionHub()
     hub._dispatch(_final("a", 0, 1))
