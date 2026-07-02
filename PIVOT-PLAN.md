@@ -218,13 +218,18 @@ Not one shell — **two surfaces with different jobs**:
   ([[auth-billing-clerk]] soft gate) exists mainly so users arrive holding the
   frontend, since the backend is useless alone; this page catches the ones who
   bypass it.
-- **OPEN (settle here): bundled vs hosted frontend.** Either the desktop ships
-  **backend-only** with the hosted/installable PWA as the *sole* frontend (cleaner —
-  one canonical frontend, no per-release frontend drift, version-negotiation is
-  backend-only; first run needs internet to load the PWA, then offline via install),
-  **or** it **bundles + serves the PWA at localhost** (offline day-one, but
-  reintroduces the frontend-version drift the pivot kills). Lean: **backend-only**;
-  weigh against the flaky-venue-wifi use case before committing.
+- **DECIDED: hosted PWA, backend-only desktop.** Rooms/audience/archive require the
+  **Cloudflare Worker** (CaptionRoom DO + R2) — internet is mandatory for those
+  anyway — so hosting the *frontend* on the same cloud costs nothing extra and gives
+  one canonical PWA (no per-release frontend drift; version-negotiation stays
+  backend-only). The desktop ships **backend-only**. Offline **local-only**
+  captioning (operator + on-air display, no rooms) is covered by the PWA being
+  **installable** (service-worker app-shell + the existing `/hf` model cache) — no
+  bundled copy needed. **Caveat to verify (P2 dev won't surface it; it's a P3/deploy
+  check):** a hosted `https://` PWA opening `ws://127.0.0.1:8765` relies on the
+  **loopback secure-context / mixed-content exemption** (`localhost`/`127.0.0.1` are
+  potentially-trustworthy, so not blocked — works in Chromium; verify across target
+  browsers). This is how `LocalWsBackend` reaches the local backend in production.
 
 ---
 
