@@ -124,12 +124,55 @@ keystone — every later phase hangs off it.
     associated entirely browser-side. This is why the wire needs only a `u32`.
 - **`ClipDecoder` service** (new; implements the `Controller` protocol beside
   `LiveStreamer`/`MockProducer`, wired in `cli.py`): on a clip →
-  `engine.transcribe(samples)` → emit `asrResult{reqId, …}`; submit finals to the
-  existing `RefinementPass` → `asrRefined{reqId, …}` (same `reqId`). It does
-  **not** use `_frames`/VAD/utterance assembly (that's the browser's job now),
-  and never handles segment UUIDs. Reuses hub → WS writer path to return results.
-  - `set_model` / model advertisement work through existing control messages.
-  - `set_device`/sounddevice methods become no-ops in this mode.
+  `engine.transcribe(samples)` → `asrResult{reqId, …}`; for finals, refine →
+  `asrRefined{reqId, …}` (same `reqId`). It does **not** use `_frames`/VAD/utterance
+  assembly (that's the browser's job now) and never handles segment UUIDs.
+  - **Replies are point-to-point on the requesting socket**, not a hub broadcast —
+    this is an RPC-shaped reply correlated by `reqId`, so the reader sends
+    `asrResult`/`asrRefined` back on that connection directly (no `CaptionHub`).
+  - **Refine reuse:** reuse `RefinementPass`'s engine-on-its-own-thread pattern,
+    but with a `reqId`-keyed emit that sends `asrRefined` — **not** `hub.emit_final`
+    (which is segment-id/hub-centric and doesn't apply here). Factor the reusable
+    core out or adapt lightly.
+  - `set_model` reloads the engine via the existing factory; `set_device`/
+    sounddevice methods become no-ops in this mode.
+
+**Data-flow clarification (consequence of P1.5 — browser owns the transcript):**
+Python is a **pure decode service**; the **browser is the source of truth** for
+the assembled transcript (ids, corrections, joins, repeat-collapse). So P2 is
+end-to-end *within the operator PWA + cloud room* — the browser gets text back
+from Python and tees to its UI + the cloud `CaptionRoom` exactly as in WebGPU
+mode. **Fan-out to the native/LAN display is NOT P2** — that's P3 "Job B" (the
+browser publishes its assembled finals to a **local room**, reusing the existing
+`RoomPublisher` → room-hub → `Viewer` path, so the display stays "just another
+subscriber"). Keeping display fan-out out of P2 is what keeps `ClipDecoder`
+stateless and id-free.
+
+**P2 — sequenced sub-steps (build in this order):**
+1. **Formalize the reply messages in `@captions/protocol`** (Zod) + mirror in
+   `desktop/.../protocol.py` (pydantic), bump `PROTOCOL_VERSION` 9→10:
+   `asrResult{reqId,text,words?}`, `asrRefined{reqId,text,words?}`,
+   `asrStatus{…EngineStatus}`, `asrProgress{…}`. Document the binary clip-frame
+   layout as a shared spec/constants (TS codec stays canonical). Decide model
+   advertisement: minimal `asrModels{models[]}` server message (recommended) vs.
+   folding into `asrStatus`. Then repoint `LocalWsBackend` off its local TS types
+   onto the formalized ones (removes the P1 placeholder types).
+2. **Python clip-frame codec** — mirror of `encodeClipFrame`/`decodeClip*`
+   (`struct` unpack `<IBBH` header + Float32/Int16 PCM → numpy). Cross-language
+   golden test: decode a TS-produced fixture.
+3. **Binary WS ingest** (`server.py` `reader()`): `sock.receive()` → discriminate
+   `text` (existing `_handle_client`) vs `bytes` (decode frame → `ClipDecoder`).
+4. **`ClipDecoder`** per the bullet above; wire into `cli.py`. Decide launch: a
+   `serve` mode/flag (e.g. `--asr-server`) that runs `ClipDecoder` **instead of**
+   `LiveStreamer` (native capture stays the default for headless/hi-fi).
+5. **Concurrency:** run `engine.transcribe` off the event loop (executor/thread;
+   the process-wide `_MLX_LOCK` already serializes Metal), refine on its own
+   thread. Browser is clock master; decode backpressure = same as today's
+   contention, acceptable.
+6. **End-to-end verify:** `serve --asr-server`, PWA selector → local server, feed
+   BlackHole → captions come from Python (heavy model) and refined text replaces
+   finals a beat later. Desktop tests green + new codec/decoder tests.
+
 - **Checkpoint:** `local server` backend fully functional end-to-end; a browser
   tab on localhost captions through Python (heavy model + refine). BlackHole
   loopback still works as the "mic" via getUserMedia.
