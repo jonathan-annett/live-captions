@@ -292,6 +292,18 @@ Tiers, building on that one backbone:
   download/management is later.) Also a tunable **ASR window size** (latency ↔ context
   trade-off) surfaced as a friendly control.
 - **Offline** — optional model-bundled builds for air-gapped venues.
+- **Live-boot USB appliance (read-only)** — a bootable Linux image that turns any
+  borrowed high-spec PC into a **stateless captioner appliance** without touching its
+  hard drive: boot → kiosk-mode caption output on HDMI, **control remotely** via a
+  browser (`serve --fullscreen --host 0.0.0.0`), reboot and it's gone. **Pure packaging
+  target — the app is unchanged;** it's the Linux headless/kiosk mode delivered as a
+  bootable `.iso`. Stack: a **glibc** live distro (Debian `live-build` — NOT musl/Alpine,
+  which breaks the CTranslate2 manylinux wheels), squashfs + tmpfs overlay (inherently
+  read-only/stateless), a `cage`/openbox kiosk, the **ASR model baked in** (pairs with the
+  model-bundled Offline builds above), and a boot screen showing the control URL/QR (reuse
+  the QR overlay). **Start CPU-only** (runs on any x86_64, no drivers; a high-spec box has
+  the cores for small/medium on CPU); an NVIDIA/CUDA variant is a bigger, hardware-specific
+  image. Pitch: no install, no traces, audio never leaves the box.
 - **Model cache: persist + portability** — request persistent browser storage so the
   (~0.6 GB) cached model isn't evicted; export/import the cached model as one file to move
   it to a new machine without re-downloading. Browser (ONNX) and native (CTranslate2/MLX)
