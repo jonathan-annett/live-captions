@@ -28,6 +28,40 @@ from .sanitize import collapse_repeats, is_degenerate
 _PROMPT_TAIL = 400
 
 
+def refine_decode(
+    engine: ASREngine,
+    samples: Any,
+    start: float,
+    end: float,
+    *,
+    hotwords: Optional[str] = None,
+    prompt: Optional[str] = None,
+) -> tuple[Optional[str], Optional[list[Word]]]:
+    """Re-decode one utterance at higher quality and return ``(text, words)``.
+
+    The shared core of a refinement decode (beam + long-form conditioning, drop
+    degenerate output, collapse repeats, offset word times by ``start``). Returns
+    ``(None, None)`` when the decode is empty/degenerate. Reused by
+    :class:`RefinementPass` (which emits a same-id ``final`` to the hub) and the
+    clip-decode ASR backend (which emits an ``asrRefined`` keyed by ``reqId``).
+    Pass ``start=0.0`` for clip-relative word times.
+    """
+    result = engine.transcribe(samples, hotwords=hotwords, quality=True, prompt=prompt or None)
+    raw = result.text.strip()
+    if not raw or is_degenerate(raw):
+        return None, None
+    text = collapse_repeats(raw)
+    words = (
+        [
+            Word(text=w.text, start=start + w.start, end=start + w.end, confidence=w.confidence)
+            for w in result.words
+        ]
+        if result.words
+        else None
+    )
+    return text, words
+
+
 class RefinementPass:
     def __init__(
         self,
@@ -118,26 +152,11 @@ class RefinementPass:
 
     def refine_one(self, seg_id: str, samples: Any, start: float, end: float) -> None:
         """Re-decode one utterance and emit the refined final (also the unit test hook)."""
-        result = self.engine.transcribe(
-            samples, hotwords=self._hotwords, quality=True, prompt=self._recent or None
+        text, words = refine_decode(
+            self.engine, samples, start, end, hotwords=self._hotwords, prompt=self._recent or None
         )
-        raw = result.text.strip()
-        if not raw or is_degenerate(raw):
+        if text is None:
             return
-        text = collapse_repeats(raw)
-        words = (
-            [
-                Word(
-                    text=w.text,
-                    start=start + w.start,
-                    end=start + w.end,
-                    confidence=w.confidence,
-                )
-                for w in result.words
-            ]
-            if result.words
-            else None
-        )
         self.hub.emit_final(
             CaptionSegment(id=seg_id, text=text, start=start, end=end, words=words)
         )
