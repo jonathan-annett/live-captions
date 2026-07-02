@@ -1,0 +1,110 @@
+name: release-intel-rosetta
+
+# EXPERIMENTAL — build the macOS Intel (x86_64) bundle on an Apple Silicon runner
+# under Rosetta 2, instead of the scarce/deprecated `macos-13` Intel runners
+# (a `v0.1.0-intel` build once sat queued ~22 h waiting for one).
+#
+# PyInstaller can't cross-compile: it FREEZES the host interpreter + the host's
+# native wheels. So there's no "just tell CI to build Intel" — the toolchain
+# physically emits host-arch binaries. The trick that DOES work: install a
+# universal2 Python 3.12 and run the whole build through `arch -x86_64`, which
+# executes the x86_64 slice under Rosetta. Then `platform.machine()` == "x86_64",
+# `build.py` auto-detects the `macos-intel` target, and pip pulls x86_64 wheels.
+#
+# THE RISK this guards against: `build.py` spawns PyInstaller as a subprocess, and
+# a translated (x86_64) parent spawning a *universal2* child does NOT guarantee the
+# child also runs x86_64 — it could run native arm64 and silently produce an arm64
+# bundle mislabeled "intel". So the `verify` step below is a HARD gate: it fails
+# the job unless the produced executable actually contains x86_64 and no arm64.
+#
+# Trigger is `workflow_dispatch` ONLY for now: it uploads an artifact but does NOT
+# publish a release, so a produced zip can be smoke-tested on real Intel hardware
+# before we trust it. Once validated, add a tag trigger + a publish job (mirror
+# release-intel.yml).
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: "Python 3.12 patch version (universal2 installer from python.org)"
+        default: "3.12.8"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build macos-intel (rosetta)
+    runs-on: macos-14 # Apple Silicon (arm64) + Rosetta 2
+    env:
+      PY: ${{ github.event.inputs.python_version }}
+      PYBIN: /usr/local/bin/python3.12 # python.org framework python (universal2)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure Rosetta 2
+        run: softwareupdate --install-rosetta --agree-to-license || true
+
+      # The shared frontend is bundled into the app as `web/`. Its build is plain
+      # JS output (arch-independent), so a normal arm64 Node is fine.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build frontend
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm --filter @captions/display build
+
+      - name: Install universal2 Python ${{ env.PY }}
+        run: |
+          set -euo pipefail
+          PKG="python-${PY}-macos11.pkg"
+          curl -fsSL -o "/tmp/${PKG}" "https://www.python.org/ftp/python/${PY}/${PKG}"
+          sudo installer -pkg "/tmp/${PKG}" -target /
+          test -x "$PYBIN"
+
+      - name: Confirm the x86_64 slice runs under Rosetta
+        run: |
+          set -euo pipefail
+          arch -x86_64 "$PYBIN" - <<'PY'
+          import platform, sys
+          print(sys.version)
+          m = platform.machine()
+          assert m == "x86_64", f"interpreter is {m}, not x86_64 under Rosetta"
+          PY
+
+      - name: Install desktop + packaging deps (x86_64)
+        # Same extras the macos-13 CI uses for Intel; NO mlx (Apple-Silicon only).
+        run: |
+          set -euo pipefail
+          arch -x86_64 "$PYBIN" -m pip install --upgrade pip
+          arch -x86_64 "$PYBIN" -m pip install -e "./desktop[server,audio,asr,desktop,package]"
+
+      - name: Build bundle + zip (x86_64)
+        # No --target: let build.py derive the label from the ACTUAL arch, so the
+        # zip name can't diverge from the interpreter arch. (Binary arch is still
+        # verified below, since PyInstaller runs as a child process.)
+        run: |
+          set -euo pipefail
+          arch -x86_64 "$PYBIN" desktop/packaging/build.py
+
+      - name: Verify the produced bundle is x86_64 (no arm64) — HARD GATE
+        run: |
+          set -euo pipefail
+          BIN=desktop/dist/bundle/caption-guru/caption-guru
+          test -f "$BIN" || { echo "::error::bundle executable not found at $BIN"; exit 1; }
+          echo "file: $(file "$BIN")"
+          ARCHS=$(lipo -archs "$BIN" 2>/dev/null || echo "")
+          echo "archs: ${ARCHS:-<none>}"
+          echo "$ARCHS" | grep -qw x86_64 || { echo "::error::bundle has NO x86_64 slice — Rosetta build did not take"; exit 1; }
+          if echo "$ARCHS" | grep -qw arm64; then
+            echo "::error::bundle contains arm64 — PyInstaller ran native, not under Rosetta"; exit 1
+          fi
+          test -f desktop/dist/caption-guru-macos-intel.zip \
+            || { echo "::error::expected desktop/dist/caption-guru-macos-intel.zip (wrong target detected)"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caption-guru-macos-intel
+          path: desktop/dist/caption-guru-macos-intel.zip
+          if-no-files-found: error
