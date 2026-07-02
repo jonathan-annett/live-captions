@@ -1,8 +1,8 @@
 import type { EngineStatus, ServerMessage, Word } from "@captions/protocol";
 import { EnergyVAD } from "../audio/vad.js";
 import workletUrl from "../audio/pcm-worklet.js?url";
+import { type AsrBackend, WorkerBackend } from "./backend.js";
 import { correctText } from "./dictionary.js";
-import type { WorkerEvent } from "./messages.js";
 import {
   analyzeClip,
   isDegenerate,
@@ -11,11 +11,6 @@ import {
 } from "./sanitize.js";
 
 const TARGET_RATE = 16000;
-
-interface DecodeResult {
-  text: string;
-  words?: Word[];
-}
 
 // Diagnostics / live tuning via the page URL (so we can debug the deployed site
 // without a rebuild): ?debug logs every gate decision + decode to the console;
@@ -55,7 +50,7 @@ export interface CaptionerOptions {
  * BroadcastChannel and mirrored to the UI via `onUpdate`.
  */
 export class Captioner {
-  private worker: Worker | null = null;
+  private backend: AsrBackend;
   private channel: BroadcastChannel | null = null;
   private audioCtx: AudioContext | null = null;
   private stream: MediaStream | null = null;
@@ -81,7 +76,6 @@ export class Captioner {
   private lvlPeak = 0;
   private lvlSumSq = 0;
   private lvlN = 0;
-  private pending = new Map<string, (r: DecodeResult) => void>();
   private dictionary: string[] = [];
 
   // derived sample thresholds (set on start once the real rate is known)
@@ -89,8 +83,12 @@ export class Captioner {
   private partialEvery = 0;
   private maxUtter = 0;
 
-  constructor(private readonly opts: CaptionerOptions) {
+  constructor(private readonly opts: CaptionerOptions, backend?: AsrBackend) {
     this.dictionary = opts.dictionary ?? [];
+    this.backend = backend ?? new WorkerBackend();
+    this.backend.onStatus((s) => this.emitStatus(s));
+    this.backend.onProgress((p) => this.opts.onProgress?.(p));
+    // onRefine is wired in P2 (LocalWsBackend); WorkerBackend never fires it.
   }
 
   setDictionary(terms: string[]): void {
@@ -112,12 +110,7 @@ export class Captioner {
     this.channel = new BroadcastChannel(this.opts.channel);
     this.emitStatus({ state: "loading", model: this.opts.model });
 
-    this.worker = new Worker(new URL("./asr.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    this.worker.onmessage = (ev: MessageEvent<WorkerEvent>) =>
-      this.onWorkerEvent(ev.data);
-    this.worker.postMessage({ type: "load", model: this.opts.model, debug: DEBUG });
+    await this.backend.load(this.opts.model, { debug: DEBUG });
 
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
@@ -195,13 +188,12 @@ export class Captioner {
     this.node?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
     void this.audioCtx?.close();
-    this.worker?.terminate();
+    this.backend.close();
     this.channel?.close();
     this.node = null;
     this.source = null;
     this.stream = null;
     this.audioCtx = null;
-    this.worker = null;
     this.channel = null;
     this.emitStatus({ state: "idle" });
   }
@@ -300,7 +292,7 @@ export class Captioner {
       this.logDrop("final", "no-speech gate", a);
       return;
     }
-    void this.rpc(snap.samples, true).then(({ text, words }) => {
+    void this.backend.transcribe(snap.samples, { words: true }).then(({ text, words }) => {
       const degen = isDegenerate(text);
       if (DEBUG) console.log(`[cap] final decoded ${JSON.stringify(text)} degenerate=${degen}`);
       if (text && !degen) {
@@ -328,7 +320,7 @@ export class Captioner {
       this.logDrop("partial", "no-speech gate", a);
       return;
     }
-    void this.rpc(snap.samples).then(({ text }) => {
+    void this.backend.transcribe(snap.samples, { words: false }).then(({ text }) => {
       this.partialBusy = false;
       const degen = isDegenerate(text);
       if (text && !degen && this.currentId === snap.meta.id) {
@@ -374,52 +366,6 @@ export class Captioner {
         end: this.sampleCount / this.rate,
       },
     };
-  }
-
-  // --- worker RPC -----------------------------------------------------------
-
-  private rpc(samples: Float32Array, words = false): Promise<DecodeResult> {
-    const reqId = crypto.randomUUID();
-    return new Promise((resolve) => {
-      this.pending.set(reqId, resolve);
-      this.worker?.postMessage({ type: "transcribe", reqId, samples, words }, [
-        samples.buffer,
-      ]);
-    });
-  }
-
-  private onWorkerEvent(ev: WorkerEvent): void {
-    switch (ev.type) {
-      case "loading":
-        this.emitStatus({ state: "loading", message: ev.message });
-        break;
-      case "progress":
-        this.opts.onProgress?.({ loaded: ev.loaded, total: ev.total });
-        break;
-      case "ready":
-        this.emitStatus({
-          state: "listening",
-          backend: "transformers.js",
-          device: ev.device,
-          model: ev.model,
-        });
-        break;
-      case "result": {
-        const resolve = this.pending.get(ev.reqId);
-        this.pending.delete(ev.reqId);
-        resolve?.({ text: ev.text, words: ev.words });
-        break;
-      }
-      case "error": {
-        if (ev.reqId) {
-          this.pending.get(ev.reqId)?.({ text: "" });
-          this.pending.delete(ev.reqId);
-        } else {
-          this.emitStatus({ state: "error", message: ev.message });
-        }
-        break;
-      }
-    }
   }
 
   // --- emit -----------------------------------------------------------------
