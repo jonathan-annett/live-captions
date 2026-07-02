@@ -36,7 +36,7 @@ jobs:
     name: build macos-intel (rosetta)
     runs-on: macos-14 # Apple Silicon (arm64) + Rosetta 2
     env:
-      PY: ${{ github.event.inputs.python_version }}
+      PY: ${{ github.event.inputs.python_version || '3.12.8' }}
       PYBIN: /usr/local/bin/python3.12 # python.org framework python (universal2)
     steps:
       - uses: actions/checkout@v4
