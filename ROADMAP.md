@@ -252,6 +252,40 @@ Tiers, building on that one backbone:
   display needs every partial, but the audience could get finals + occasional
   partials (cuts the incoming-WS-message meter + bandwidth). NOT a "flag cache DO"
   (it evicts too; `state.storage` is already the durable cache — see the doc).
+- **Auth + billing (Clerk on Workers + DO) — the paid-features enabler** — adopt the
+  podrecorder.net approach (reference playbook copied verbatim to
+  `docs/clerk-integration.md`): the client loads `@clerk/clerk-js` (social sign-in) and
+  attaches the Clerk **session JWT** as `Authorization: Bearer …` on gated requests; the
+  Worker verifies it with `@clerk/backend` and checks entitlement via `auth.has({ plan })`.
+  **No database, no Stripe webhook, no `customer` table** — Clerk Billing (Stripe under the
+  hood) carries the entitlement in the verified session. A single **`AUTH_MODE` flag
+  (`off` / `prelaunch` / `live`)** phases the launch: `off` = today's free product,
+  `prelaunch` = **sign-in alone unlocks every gated feature** (exercise the paid paths with
+  zero payments), `live` = the paid plan is the gate. Maps cleanly onto our stack:
+  - **Entitlement rides the `CaptionRoom` DO** — the operator authenticates at `/r/new`; an
+    entitled operator flips the room DO `entitled=true` and the audience **inherits** it
+    (viewers never sign in). Same shape as podrecorder's per-room flag, on top of the existing
+    publish-token model.
+  - **First gated resources = the cost-incurring cloud endpoints** — Workstream-2 **R2
+    archive/replay** (`/api/archive/*`) is the natural first `requirePro` gate, then per-room
+    retention beyond the free tier, [[domain-offering]] custom hostnames, and the
+    venue/[[geofenced-viewer]] tier.
+  - **The free/paid line is already the pivot's architecture:** **on-device (WebGPU) +
+    desktop-localhost ASR stay free / self-hosted** (no auth); **cloud room + archive + venue
+    features are the paid surface.** The ASR-backend selector and `AUTH_MODE` compose — nobody
+    captioning locally ever meets a login.
+  - **Two playbook constraints that touch our design now:** (1) **COOP/COEP breaks Clerk's
+    OAuth popup** (`same-origin` strips `window.opener`) — this *reinforces* our standing
+    "never re-add COOP/COEP" invariant (same-origin `/hf` proxy + single-threaded WebGPU);
+    sign-in works precisely **because** we don't set those headers (and the sherpa-onnx spike
+    must stay single-threaded for the same reason). (2) **No DO→DO `fetch` inside a
+    WebSocket-upgrade handler** ("Network connection lost") — so the room entitlement check
+    must run in the **plain Worker request context, before the 101 upgrade** (in the
+    `packages/room` router), not inside the DO's WS handler.
+  - Business notes: Clerk Billing is **public beta + 0.7%/txn** on top of standard Stripe fees;
+    the **publishable key is public** (commit-safe), the **secret key is not** (rides the
+    existing gitignored-secrets pattern). Ties to [[release-channels]] (flip `prelaunch → live`
+    at the apex cutover).
 - **Distribution** — macOS notarization + Windows signing, auto-update.
 - **Output reach** — NDI, display themes, RTL / non-Latin fonts.
 - **Captioner → OBS browser link** — a way for the browser-based captioner (PWA) to
