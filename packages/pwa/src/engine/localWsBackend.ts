@@ -8,7 +8,14 @@
 // The Python server that consumes these frames is P2 — until it exists, the
 // backend simply reports unavailable and `transcribe` resolves empty (never
 // hangs, never silently falls back to WebGPU).
-import type { EngineStatus, Word } from "@captions/protocol";
+import type {
+  AsrModelsMessage,
+  AsrProgressMessage,
+  AsrRefinedMessage,
+  AsrResultMessage,
+  AsrStatusMessage,
+  EngineStatus,
+} from "@captions/protocol";
 import type { AsrBackend, DecodeResult, LoadOptions } from "./backend.js";
 
 /** Default localhost ASR server (the desktop Python `serve` WS endpoint). */
@@ -99,33 +106,16 @@ export function decodeClipPcm(buf: ArrayBuffer): Float32Array {
 }
 
 // --- reply messages (server -> browser, JSON text) -------------------------
-// P2 formalizes these in @captions/protocol (+ the Python pydantic mirror);
-// kept local for the P1 skeleton so we don't churn the shared protocol yet.
-interface AsrResultMsg {
-  type: "asrResult";
-  reqId: number;
-  text: string;
-  words?: Word[];
-}
-interface AsrRefinedMsg {
-  type: "asrRefined";
-  // Correlates to the original decode by its `reqId` — the server never sees the
-  // segment UUID. `LocalWsBackend` maps `reqId → id` locally and fires
-  // `onRefine` with the real UUID (see PIVOT-PLAN "Refinement correlation").
-  reqId: number;
-  text: string;
-  words?: Word[];
-}
-interface AsrStatusMsg {
-  type: "asrStatus";
-  status: EngineStatus;
-}
-interface AsrProgressMsg {
-  type: "asrProgress";
-  loaded: number;
-  total: number;
-}
-type LocalAsrMsg = AsrResultMsg | AsrRefinedMsg | AsrStatusMsg | AsrProgressMsg;
+// Formalized in @captions/protocol (+ the Python pydantic mirror) as of v10.
+// The server correlates purely by `reqId` and never sees the segment UUID;
+// `LocalWsBackend` maps `reqId → id` locally and fires `onRefine` with the real
+// UUID (see PIVOT-PLAN "Refinement correlation").
+type LocalAsrMsg =
+  | AsrResultMessage
+  | AsrRefinedMessage
+  | AsrStatusMessage
+  | AsrProgressMessage
+  | AsrModelsMessage;
 
 /**
  * Speech recognition via a localhost Python server over WebSocket. Reconnects
@@ -153,6 +143,9 @@ export class LocalWsBackend implements AsrBackend {
   private statusCb?: (status: EngineStatus) => void;
   private progressCb?: (p: { loaded: number; total: number }) => void;
   private refineCb?: (id: string, result: DecodeResult) => void;
+  private modelsCb?: (models: string[]) => void;
+  /** Latest model list the server advertised (empty until it does). */
+  models: string[] = [];
 
   constructor(private readonly url: string = DEFAULT_LOCAL_WS_URL) {}
 
@@ -164,6 +157,11 @@ export class LocalWsBackend implements AsrBackend {
   }
   onRefine(cb: (id: string, result: DecodeResult) => void): void {
     this.refineCb = cb;
+  }
+  /** Backend-specific (not on AsrBackend): the model picker can subscribe to the
+   *  server's advertised model list to populate its options. */
+  onModels(cb: (models: string[]) => void): void {
+    this.modelsCb = cb;
   }
 
   async load(model: string, opts?: LoadOptions): Promise<void> {
@@ -293,7 +291,10 @@ export class LocalWsBackend implements AsrBackend {
       case "asrProgress":
         this.progressCb?.({ loaded: msg.loaded, total: msg.total });
         break;
-      // P2: an `asrModels` advertisement lands here to populate the model picker.
+      case "asrModels":
+        this.models = msg.models;
+        this.modelsCb?.(msg.models);
+        break;
     }
   }
 

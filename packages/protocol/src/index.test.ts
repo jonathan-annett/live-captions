@@ -99,6 +99,36 @@ describe("server messages", () => {
     expect(parsed.type).toBe("history");
   });
 
+  it("parses the v10 ASR clip-decode messages (reqId-correlated)", () => {
+    const result = parseServerMessage({
+      type: "asrResult",
+      reqId: 7,
+      text: "hello",
+      words: [{ text: "hello", start: 0, end: 0.4 }],
+    });
+    expect(result.type === "asrResult" && result.reqId).toBe(7);
+
+    const refined = parseServerMessage({ type: "asrRefined", reqId: 7, text: "Hello." });
+    expect(refined.type === "asrRefined" && refined.text).toBe("Hello.");
+
+    const status = parseServerMessage({
+      type: "asrStatus",
+      status: { state: "listening", backend: "faster-whisper", model: "small.en" },
+    });
+    expect(status.type === "asrStatus" && status.status.state).toBe("listening");
+
+    const progress = parseServerMessage({ type: "asrProgress", loaded: 10, total: 100 });
+    expect(progress.type === "asrProgress" && progress.total).toBe(100);
+
+    const models = parseServerMessage({ type: "asrModels", models: ["small.en", "large-v3"] });
+    expect(models.type === "asrModels" && models.models).toEqual(["small.en", "large-v3"]);
+  });
+
+  it("parses the v10 asrLoad client message", () => {
+    const msg = parseClientMessage({ type: "asrLoad", model: "small.en", debug: true });
+    expect(msg.type === "asrLoad" && msg.model).toBe("small.en");
+  });
+
   it("rejects an unknown message type", () => {
     expect(() => parseServerMessage({ type: "bogus" })).toThrow();
   });

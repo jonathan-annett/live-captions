@@ -24,7 +24,12 @@ from pydantic.alias_generators import to_camel
 #     start/stop/restart).
 # v9: audio input-device picker — `requestDevices`/`setInputDevice` client
 #     messages + `audioDevices` server message (desktop mic selection).
-PROTOCOL_VERSION = 9
+# v10: localhost clip-decode ASR backend (`serve --asr-server`; browser owns
+#     capture/VAD/framing, ships utterance clips over a binary side-channel) —
+#     `asrLoad` client message + `asrResult`/`asrRefined`/`asrStatus`/
+#     `asrProgress`/`asrModels` server messages. Correlated purely by a
+#     browser-allocated `reqId`; the server never sees the segment UUID.
+PROTOCOL_VERSION = 10
 
 
 class _Model(BaseModel):
@@ -243,6 +248,55 @@ class AudioDevicesMessage(_Model):
     current: Optional[int] = None
 
 
+# --- localhost clip-decode ASR backend (v10) -------------------------------
+# `serve --asr-server`: the browser owns capture/VAD/framing and ships each
+# utterance clip to this server over a BINARY side-channel (see clip_frame.py,
+# which mirrors the canonical TS codec in localWsBackend.ts). These JSON messages
+# are the replies + handshake. The server correlates purely by a browser-allocated
+# `reqId` and never sees the segment UUID (refinement is mapped to a segment id
+# browser-side).
+
+
+class AsrResultMessage(_Model):
+    """Immediate decode result for a clip, echoing its reqId."""
+
+    type: Literal["asrResult"] = "asrResult"
+    req_id: int = Field(ge=0)
+    text: str
+    words: Optional[list[Word]] = None
+
+
+class AsrRefinedMessage(_Model):
+    """A higher-quality re-decode of an earlier FINAL clip, same reqId."""
+
+    type: Literal["asrRefined"] = "asrRefined"
+    req_id: int = Field(ge=0)
+    text: str
+    words: Optional[list[Word]] = None
+
+
+class AsrStatusMessage(_Model):
+    """Engine state for the ASR backend channel (load/listening/error)."""
+
+    type: Literal["asrStatus"] = "asrStatus"
+    status: EngineStatus
+
+
+class AsrProgressMessage(_Model):
+    """Coarse model-download progress (bytes) for the ASR backend channel."""
+
+    type: Literal["asrProgress"] = "asrProgress"
+    loaded: float = Field(ge=0)
+    total: float = Field(ge=0)
+
+
+class AsrModelsMessage(_Model):
+    """Models the local server can load — advertised so the picker shows them."""
+
+    type: Literal["asrModels"] = "asrModels"
+    models: list[str]
+
+
 ServerMessage = Annotated[
     Union[
         PartialMessage,
@@ -253,6 +307,11 @@ ServerMessage = Annotated[
         HistoryMessage,
         PresenceMessage,
         AudioDevicesMessage,
+        AsrResultMessage,
+        AsrRefinedMessage,
+        AsrStatusMessage,
+        AsrProgressMessage,
+        AsrModelsMessage,
     ],
     Field(discriminator="type"),
 ]
@@ -332,6 +391,14 @@ class SetInputDeviceMessage(_Model):
     device: Optional[int] = None
 
 
+class AsrLoadMessage(_Model):
+    # Pick/load the model the clip-decode server should decode with (v10). Sent by
+    # LocalWsBackend on connect; the server hot-swaps the live engine.
+    type: Literal["asrLoad"] = "asrLoad"
+    model: str
+    debug: Optional[bool] = None
+
+
 ClientMessage = Annotated[
     Union[
         SetConfigMessage,
@@ -343,6 +410,7 @@ ClientMessage = Annotated[
         RoomControlMessage,
         RequestDevicesMessage,
         SetInputDeviceMessage,
+        AsrLoadMessage,
     ],
     Field(discriminator="type"),
 ]

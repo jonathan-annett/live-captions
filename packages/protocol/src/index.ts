@@ -28,8 +28,14 @@ export * from "./suggest.js";
  *      overlay, any background mode); `roomControl` client message (desktop
  *      runtime room start/stop/restart).
  *  v9: audio input-device picker — `requestDevices`/`setInputDevice` client
- *      messages + `audioDevices` server message (desktop mic selection). */
-export const PROTOCOL_VERSION = 9;
+ *      messages + `audioDevices` server message (desktop mic selection).
+ *  v10: localhost clip-decode ASR backend (`serve --asr-server`; browser owns
+ *      capture/VAD/framing, ships utterance clips over a binary side-channel) —
+ *      `asrLoad` client message + `asrResult`/`asrRefined`/`asrStatus`/
+ *      `asrProgress`/`asrModels` server messages. Correlated purely by a
+ *      browser-allocated `reqId`; the server never sees the segment UUID
+ *      (refinement is mapped back to a segment id browser-side). */
+export const PROTOCOL_VERSION = 10;
 
 // ---------------------------------------------------------------------------
 // Segments
@@ -437,6 +443,47 @@ export const AudioDevicesMessageSchema = z.object({
   current: z.number().int().nullable().optional(),
 });
 
+// --- localhost clip-decode ASR backend (v10) -------------------------------
+// The desktop `serve --asr-server` mode. The browser owns capture/VAD/framing
+// (Captioner) and ships each utterance clip to the local Python server over a
+// BINARY side-channel — deliberately NOT modelled here (see the CLIP_* codec in
+// packages/pwa/src/engine/localWsBackend.ts, which is the canonical layout the
+// Python side mirrors). These JSON messages are the replies + handshake. The
+// server correlates purely by a browser-allocated `reqId` and never sees the
+// segment UUID; `LocalWsBackend` maps `reqId → id` locally so an `asrRefined`
+// updates the right segment (see PIVOT-PLAN "Refinement correlation").
+
+/** Immediate decode result for a clip, echoing its `reqId`. */
+export const AsrResultMessageSchema = z.object({
+  type: z.literal("asrResult"),
+  reqId: z.number().int().nonnegative(),
+  text: z.string(),
+  words: z.array(WordSchema).optional(),
+});
+/** A higher-quality re-decode of an earlier FINAL clip, same `reqId`. */
+export const AsrRefinedMessageSchema = z.object({
+  type: z.literal("asrRefined"),
+  reqId: z.number().int().nonnegative(),
+  text: z.string(),
+  words: z.array(WordSchema).optional(),
+});
+/** Engine state for the ASR backend channel (load/listening/error). */
+export const AsrStatusMessageSchema = z.object({
+  type: z.literal("asrStatus"),
+  status: EngineStatusSchema,
+});
+/** Coarse model-download progress (bytes) for the ASR backend channel. */
+export const AsrProgressMessageSchema = z.object({
+  type: z.literal("asrProgress"),
+  loaded: z.number().nonnegative(),
+  total: z.number().nonnegative(),
+});
+/** Models the local server can load — advertised so the picker shows them. */
+export const AsrModelsMessageSchema = z.object({
+  type: z.literal("asrModels"),
+  models: z.array(z.string()),
+});
+
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   PartialMessageSchema,
   FinalMessageSchema,
@@ -446,8 +493,18 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   HistoryMessageSchema,
   PresenceMessageSchema,
   AudioDevicesMessageSchema,
+  AsrResultMessageSchema,
+  AsrRefinedMessageSchema,
+  AsrStatusMessageSchema,
+  AsrProgressMessageSchema,
+  AsrModelsMessageSchema,
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
+export type AsrResultMessage = z.infer<typeof AsrResultMessageSchema>;
+export type AsrRefinedMessage = z.infer<typeof AsrRefinedMessageSchema>;
+export type AsrStatusMessage = z.infer<typeof AsrStatusMessageSchema>;
+export type AsrProgressMessage = z.infer<typeof AsrProgressMessageSchema>;
+export type AsrModelsMessage = z.infer<typeof AsrModelsMessageSchema>;
 
 // ---------------------------------------------------------------------------
 // Client -> server (control) messages
@@ -507,6 +564,14 @@ export const SetInputDeviceMessageSchema = z.object({
   device: z.number().int().nullable(),
 });
 
+/** Pick/load the model the local clip-decode server should decode with (v10).
+ *  Sent by `LocalWsBackend` on connect; the server hot-swaps the live engine. */
+export const AsrLoadMessageSchema = z.object({
+  type: z.literal("asrLoad"),
+  model: z.string(),
+  debug: z.boolean().optional(),
+});
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   SetConfigMessageSchema,
   SetDictionaryMessageSchema,
@@ -517,8 +582,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   RoomControlMessageSchema,
   RequestDevicesMessageSchema,
   SetInputDeviceMessageSchema,
+  AsrLoadMessageSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+export type AsrLoadMessage = z.infer<typeof AsrLoadMessageSchema>;
 
 // ---------------------------------------------------------------------------
 // Helpers
