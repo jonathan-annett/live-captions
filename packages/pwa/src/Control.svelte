@@ -18,6 +18,8 @@
     type ConnectionState,
   } from "@captions/display";
   import { Captioner } from "./engine/captioner.js";
+  import { WorkerBackend } from "./engine/backend.js";
+  import { LocalWsBackend } from "./engine/localWsBackend.js";
   import Corrections from "./Corrections.svelte";
   import { UiStore } from "./uiStore.svelte.js";
   import {
@@ -66,6 +68,9 @@
   // the default (base.en, the weakest model) — that was skewing test results.
   const LS_MODEL = "cg.model";
   const LS_DEVICE = "cg.deviceId";
+  // ASR backend: on-device WebGPU (cloud, no install) vs a localhost Python
+  // server over WebSocket (desktop; heavy models + refine — see PIVOT-PLAN.md).
+  const LS_ASR_BACKEND = "cg.asrBackend";
   const lsGet = (k: string): string | null => {
     try {
       return localStorage.getItem(k);
@@ -95,10 +100,15 @@
   let dictionaryText = $state("");
   let running = $state(false);
   let captioner: Captioner | null = null;
+  // "webgpu" (default) | "local" — chosen backend for the NEXT start(); the
+  // selector is disabled while running, so switching means stop → change → start
+  // (stop() closes the old backend, start() constructs the new one).
+  let asrBackend = $state<string>(lsGet(LS_ASR_BACKEND) ?? "webgpu");
 
   // Save selections as they change.
   $effect(() => lsSet(LS_MODEL, model));
   $effect(() => lsSet(LS_DEVICE, deviceId));
+  $effect(() => lsSet(LS_ASR_BACKEND, asrBackend));
 
   // --- room publishing ------------------------------------------------------
   // A publish target can come from the page URL (?publish=<url> or
@@ -824,15 +834,22 @@
   );
 
   async function start() {
-    captioner = new Captioner({
-      model,
-      channel: CHANNEL,
-      deviceId: deviceId || undefined,
-      dictionary: dictionaryTerms(),
-      onUpdate: sink,
-      onProgress: onModelProgress,
-      onLevel: (l) => (level = l),
-    });
+    // Construct the chosen backend fresh per session; stop() closes it. When
+    // "local" can't reach the Python server it reports an "unavailable" status
+    // (surfaced via the status pill) rather than falling back to WebGPU.
+    const backend = asrBackend === "local" ? new LocalWsBackend() : new WorkerBackend();
+    captioner = new Captioner(
+      {
+        model,
+        channel: CHANNEL,
+        deviceId: deviceId || undefined,
+        dictionary: dictionaryTerms(),
+        onUpdate: sink,
+        onProgress: onModelProgress,
+        onLevel: (l) => (level = l),
+      },
+      backend,
+    );
     running = true;
     try {
       await captioner.start();
@@ -959,6 +976,19 @@
     </label>
 
     <label>
+      Speech engine
+      <select bind:value={asrBackend} disabled={running}>
+        <option value="webgpu">On-device (WebGPU)</option>
+        <option value="local">Local server (desktop)</option>
+      </select>
+      {#if asrBackend === "local"}
+        <small class="hint-inline">
+          Needs the Caption Guru desktop server running — status shows on Start.
+        </small>
+      {/if}
+    </label>
+
+    <label>
       Model
       <select bind:value={model} disabled={running}>
         {#each availableModels as m (m.id)}
@@ -970,6 +1000,8 @@
           {selectedModel.size} download, once — then cached on this device.
         </small>
       {/if}
+      <!-- P2: when asrBackend === "local", the model list comes from the Python
+           server (asrModels advertisement) instead of the WebGPU MODELS above. -->
     </label>
 
     <label>
