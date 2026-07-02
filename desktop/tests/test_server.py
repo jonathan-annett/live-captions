@@ -148,6 +148,40 @@ def test_export_endpoint_returns_attachment():
         assert r.text.startswith("WEBVTT")
 
 
+def test_ws_clip_decode_replies_asrresult_for_a_binary_frame():
+    import numpy as np
+
+    from captions_desktop.clip_decoder import ClipDecoder
+    from captions_desktop.clip_frame import encode_clip_frame
+    from captions_desktop.engines.base import TranscribeResult
+    from captions_desktop.protocol import EngineStatus
+
+    class FakeEngine:
+        def load(self):
+            return EngineStatus(state="listening", backend="fake")
+
+        def transcribe(self, samples, hotwords=None, *, quality=False, prompt=None):
+            return TranscribeResult(text="server hi")
+
+    hub = CaptionHub()
+    decoder = ClipDecoder(lambda _m: FakeEngine(), "small.en")
+    app = build_app(hub, decoder, web_dir=None, autostart=True)  # starts the decoder
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            # Send a FINAL clip; the server decodes on its worker and replies with
+            # an asrResult echoing the reqId (point-to-point on this socket).
+            frame = encode_clip_frame(11, np.array([0.1, 0.2, 0.1], dtype=np.float32), final=True)
+            ws.send_bytes(frame)
+            got = None
+            for _ in range(50):  # skip snapshot / asrModels / asrStatus chatter
+                msg = ws.receive_json()
+                if msg.get("type") == "asrResult":
+                    got = msg
+                    break
+            assert got is not None
+            assert got["reqId"] == 11 and got["text"] == "server hi"
+
+
 def test_root_help_when_no_frontend():
     hub = CaptionHub()
     app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)

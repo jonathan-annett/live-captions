@@ -13,9 +13,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from .clip_frame import decode_clip_header, decode_clip_pcm
 from .export import export_transcript
 from .hub import CaptionHub
 from .protocol import (
+    AsrLoadMessage,
     AudioDevicesMessage,
     ControlCommand,
     EditSegmentMessage,
@@ -23,6 +25,7 @@ from .protocol import (
     RequestDevicesMessage,
     RequestHistoryMessage,
     RoomControlMessage,
+    ServerMessage,
     SetConfigMessage,
     SetDictionaryMessage,
     SetInputDeviceMessage,
@@ -32,6 +35,19 @@ from .protocol import (
 )
 from .rooms import RoomManager
 from .streaming import Controller, list_input_devices
+
+
+def _enqueue(q: "asyncio.Queue", msg: ServerMessage) -> None:
+    """Put a message on one client's outbound queue, dropping the oldest if it's
+    full (mirrors CaptionHub._fanout). Called on the loop thread only."""
+    try:
+        q.put_nowait(msg)
+    except asyncio.QueueFull:
+        try:
+            q.get_nowait()
+            q.put_nowait(msg)
+        except (asyncio.QueueEmpty, asyncio.QueueFull):
+            pass
 
 
 def build_app(
@@ -84,20 +100,52 @@ def build_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    # A clip-decode ASR backend (serve --asr-server) accepts binary audio frames
+    # and replies point-to-point; duck-typed so server.py stays decoupled from it.
+    clip_sink = (
+        controller
+        if hasattr(controller, "submit_clip") and hasattr(controller, "register_client")
+        else None
+    )
+
     @app.websocket("/ws")
     async def ws(sock: WebSocket) -> None:
         await sock.accept()
         q = hub.subscribe()
+        loop = asyncio.get_running_loop()
+
+        # A thread-safe, point-to-point send onto THIS connection's outbound queue.
+        # The single writer task drains q → send_text, so decode-worker replies are
+        # serialized with the hub fan-out (never two concurrent sends on one socket).
+        def send(msg: ServerMessage) -> None:
+            loop.call_soon_threadsafe(_enqueue, q, msg)
 
         # Catch a freshly connected client up: config + recent history.
         for m in hub.snapshot_for_new_client():
             await sock.send_text(dump_message(m))
+        if clip_sink is not None:
+            clip_sink.register_client(send)  # advertises models + current status
 
         async def reader() -> None:
             try:
                 while True:
-                    data = await sock.receive_text()
-                    _handle_client(hub, controller, data, q, manager)
+                    message = await sock.receive()
+                    if message.get("type") == "websocket.disconnect":
+                        break
+                    text = message.get("text")
+                    if text is not None:
+                        _handle_client(hub, controller, text, q, manager)
+                        continue
+                    data = message.get("bytes")
+                    if data is not None and clip_sink is not None:
+                        # Binary audio clip — decode header + PCM and hand to the
+                        # ClipDecoder (bypasses parse_client_message entirely).
+                        try:
+                            header = decode_clip_header(data)
+                            samples = decode_clip_pcm(data)
+                        except Exception:  # noqa: BLE001 - ignore a garbled frame
+                            continue
+                        clip_sink.submit_clip(header.req_id, header.final, samples, send)
             except WebSocketDisconnect:
                 pass
 
@@ -118,6 +166,8 @@ def build_app(
             for t in pending:
                 t.cancel()
         finally:
+            if clip_sink is not None:
+                clip_sink.unregister_client(send)
             hub.unsubscribe(q)
 
     if web_dir is not None:
@@ -198,6 +248,10 @@ def _handle_client(
         # Switch the capture device live, then echo the updated selection back.
         controller.set_device(msg.device)
         _reply_devices(controller, q)
+    elif isinstance(msg, AsrLoadMessage):
+        # Clip-decode backend handshake: pick the model to decode with (the
+        # ClipDecoder reloads on its worker thread; refine config is unchanged).
+        controller.set_model(msg.model)
 
 
 def _reply_devices(controller: Controller, q: "asyncio.Queue") -> None:
