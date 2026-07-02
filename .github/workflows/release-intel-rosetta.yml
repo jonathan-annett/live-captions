@@ -22,6 +22,8 @@ name: release-intel-rosetta
 # before we trust it. Once validated, add a tag trigger + a publish job (mirror
 # release-intel.yml).
 on:
+  push:
+    branches: [ci/test-rosetta-intel] # TEMPORARY: validation only, do not merge
   workflow_dispatch:
     inputs:
       python_version:
