@@ -286,11 +286,16 @@ Tiers, building on that one backbone:
     the **publishable key is public** (commit-safe), the **secret key is not** (rides the
     existing gitignored-secrets pattern). Ties to [[release-channels]] (flip `prelaunch → live`
     at the apex cutover).
-  - **Desktop download = soft gate + runtime version negotiation (DECIDED 2026-07-02).** A
-    free Clerk sign-in funnels the desktop download **through the PWA**, which serves the
-    **correct-platform artifact**; keep the **public GitHub Releases** (M8 upgrade path) and
-    have the PWA only *surface* the link when signed in — near-zero infra, preserves the
-    local/offline privacy story. **NOT a hard gate now** (no R2-proxied authenticated
+  - **Desktop download = soft gate + runtime version negotiation (DECIDED 2026-07-02).**
+    **Primary rationale is UX coherence, not licensing:** post-pivot the desktop app is a
+    **headless ASR backend that is useless without the PWA frontend** — someone who runs the
+    bare binary gets a silent localhost server and thinks it's broken. Funneling the download
+    **through the PWA** means they arrive already holding the frontend that drives it, which
+    reduces the "tried to run the Python app standalone" support burden. (Gating/licensing is
+    a *secondary*, revisitable benefit.) A free Clerk sign-in fronts the funnel and the PWA
+    serves the **correct-platform artifact**; keep the **public GitHub Releases** (M8 upgrade
+    path) and have the PWA only *surface* the link when signed in — near-zero infra, preserves
+    the local/offline privacy story. **NOT a hard gate now** (no R2-proxied authenticated
     downloads / private releases); revisit only when licensing/revocation actually needs it.
     Independently, **build runtime version negotiation regardless**: post-pivot the desktop
     reports its version over the **localhost WS** → the PWA compares to the latest and

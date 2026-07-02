@@ -211,6 +211,20 @@ Not one shell — **two surfaces with different jobs**:
 - Mic selection moves browser-side (getUserMedia device picker + existing VU
   meter). Python `sounddevice` capture is retained behind a flag for
   headless/hi-fi/appliance modes only.
+- **Self-explaining backend (support-burden fix):** a bare hit on the localhost
+  backend in a browser (or a standalone run) must serve a tiny landing page —
+  "This is the Caption Guru local ASR backend; open Caption Guru at `<url>` to use
+  it." — and the GitHub Release description points at the PWA. The download funnel
+  ([[auth-billing-clerk]] soft gate) exists mainly so users arrive holding the
+  frontend, since the backend is useless alone; this page catches the ones who
+  bypass it.
+- **OPEN (settle here): bundled vs hosted frontend.** Either the desktop ships
+  **backend-only** with the hosted/installable PWA as the *sole* frontend (cleaner —
+  one canonical frontend, no per-release frontend drift, version-negotiation is
+  backend-only; first run needs internet to load the PWA, then offline via install),
+  **or** it **bundles + serves the PWA at localhost** (offline day-one, but
+  reintroduces the frontend-version drift the pivot kills). Lean: **backend-only**;
+  weigh against the flaky-venue-wifi use case before committing.
 
 ---
 
