@@ -25,6 +25,15 @@ describe("clip frame codec", () => {
     expect(Array.from(decodeClipPcm(buf))).toEqual(Array.from(pcm));
   });
 
+  it("emits the exact golden bytes the Python codec is pinned to (cross-language guard)", () => {
+    // Must stay byte-identical to GOLDEN_F32 in desktop/tests/test_clip_frame.py.
+    const buf = encodeClipFrame(7, { final: true }, new Float32Array([0, 1, -1]));
+    const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join(" ");
+    expect(hex).toBe(
+      "07 00 00 00 01 00 00 00 00 00 00 00 00 00 80 3f 00 00 80 bf",
+    );
+  });
+
   it("marks partial frames (final bit clear) and defaults to Float32LE", () => {
     const h = decodeClipHeader(encodeClipFrame(7, { final: false }, new Float32Array(3)));
     expect(h.final).toBe(false);
