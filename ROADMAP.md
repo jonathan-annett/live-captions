@@ -42,6 +42,24 @@ Tiers, building on that one backbone:
   - **"Installed" = downloaded AND loaded AND passed a trivial decode** (reuse the warmup —
     1s of zeros, `streaming.py:203`). Only then does a model enter the registry + dropdowns;
     this is the gate that catches "downloaded but won't spin up."
+  - **Content-addressed model store (integrity + portability).** Store weights **by hash, not
+    by name** — `(name, backend) → manifest {path: sha256} → blobs`, keyed by a merkle-root
+    "version hash"; the friendly name is a mutable pointer (`small.en → hash → bits`). **Hash
+    only on ingest** (download or import-after-export), never per load: verify each blob's
+    SHA-256 against HuggingFace's published **Git-LFS `oid`** (fetch via
+    `model_info(files_metadata=True)`; browser side re-hashes with `crypto.subtle.digest`),
+    write to a temp path, and **atomically commit under the hash only on match** — corrupt or
+    partial bytes never become a committed model. This makes the install gate **three
+    orthogonal checks: hash-verified (right bytes) → loads → smoke-decodes (actually works)** —
+    hash catches silent corruption that still loads but decodes garbage; smoke-test catches
+    right-bytes/wrong-format. An upstream re-upload changes the hash → repoint the name +
+    **GC the now-unreferenced blobs**, or keep them **pinned as legacy** for reproducibility
+    (an upstream re-upload can't silently change a pinned model's output). Gives free **dedup**
+    (identical files — e.g. a shared `tokenizer.json` — hash once) and is the safety layer that
+    makes **export/import portability + offline / live-USB model-bundling** trustworthy (verify
+    a copied cache before trusting it). HF's own cache is already content-addressed
+    (`blobs/<sha>` + `refs/` + `snapshots/`), so this mostly **adds a verify-on-ingest gate + a
+    friendly-name registry + a GC/pin policy** on top rather than reinventing the store.
   - **A "Models" area** (Available catalog vs Installed set, with size + Remove) is where ALL
     download progress + failure feedback lives — off the live-captioning path entirely. This
     is where release users get the feedback they currently only see in the terminal.
