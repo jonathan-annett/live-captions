@@ -39,14 +39,14 @@ jobs:
       PY: ${{ github.event.inputs.python_version || '3.12.8' }}
       PYBIN: /usr/local/bin/python3.12 # python.org framework python (universal2)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Ensure Rosetta 2
         run: softwareupdate --install-rosetta --agree-to-license || true
 
       # The shared frontend is bundled into the app as `web/`. Its build is plain
       # JS output (arch-independent), so a normal arm64 Node is fine.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
       - name: Build frontend
@@ -103,7 +103,7 @@ jobs:
           test -f desktop/dist/caption-guru-macos-intel.zip \
             || { echo "::error::expected desktop/dist/caption-guru-macos-intel.zip (wrong target detected)"; exit 1; }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: caption-guru-macos-intel
           path: desktop/dist/caption-guru-macos-intel.zip

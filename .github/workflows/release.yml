@@ -26,10 +26,10 @@ jobs:
             target: linux-x64
             extras: "server,audio,asr,package"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Build the shared frontend the desktop server serves.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "20"
       - name: Build frontend
@@ -38,7 +38,7 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm --filter @captions/display build
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -48,7 +48,7 @@ jobs:
       - name: Build bundle + zip
         run: python desktop/packaging/build.py --target ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: caption-guru-${{ matrix.target }}
           path: desktop/dist/caption-guru-${{ matrix.target }}.zip
@@ -60,7 +60,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
