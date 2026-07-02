@@ -21,10 +21,37 @@ const DEVICES = ["webgpu", "wasm"] as const;
 // Per-model precision. Large/turbo models are pinned to q4f16 on WebGPU to keep
 // the download ~0.5–0.7 GB (fp16 weights would be ~1.5 GB); the small models
 // keep the accurate-encoder / quantized-decoder split.
-function dtypeFor(model: string, device: (typeof DEVICES)[number]): unknown {
+function dtypeFor(
+  model: string,
+  device: (typeof DEVICES)[number],
+  f16: boolean,
+): unknown {
   const large = /large|turbo/i.test(model);
   if (device === "wasm") return large ? "q4" : "q8";
+  // WebGPU: the accurate-encoder path uses fp16, which needs the `shader-f16`
+  // WebGPU feature. Many Intel/AMD/older GPUs don't expose it — without this
+  // guard the fp16 load throws and we SILENTLY drop to WASM (≈10× slower). When
+  // f16 is unavailable, use an int-quantized dtype so we STAY on the GPU.
+  if (!f16) return large ? "q4" : "q8";
   return large ? "q4f16" : { encoder_model: "fp16", decoder_model_merged: "q4" };
+}
+
+// One-time probe: does this browser's WebGPU adapter support `shader-f16`?
+let f16Supported: boolean | null = null;
+async function webgpuHasF16(): Promise<boolean> {
+  if (f16Supported !== null) return f16Supported;
+  try {
+    const gpu = (
+      navigator as unknown as {
+        gpu?: { requestAdapter(): Promise<{ features: ReadonlySet<string> } | null> };
+      }
+    ).gpu;
+    const adapter = gpu ? await gpu.requestAdapter() : null;
+    f16Supported = !!adapter && adapter.features.has("shader-f16");
+  } catch {
+    f16Supported = false;
+  }
+  return f16Supported;
 }
 
 let transcriber: AutomaticSpeechRecognitionPipeline | null = null;
@@ -56,6 +83,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  *  loads, throw the last error if none do. */
 async function loadOnce(model: string): Promise<void> {
   let lastErr: unknown;
+  const f16 = await webgpuHasF16();
   for (const device of DEVICES) {
     // Aggregate per-file download progress into a single loaded/total.
     const files = new Map<string, { loaded: number; total: number }>();
@@ -77,16 +105,19 @@ async function loadOnce(model: string): Promise<void> {
       post({ type: "progress", loaded: l, total: t });
     };
     try {
-      post({ type: "loading", message: `Loading ${model} on ${device}…` });
+      const note = device === "webgpu" ? (f16 ? " (fp16)" : " (int8 — no shader-f16)") : "";
+      post({ type: "loading", message: `Loading ${model} on ${device}${note}…` });
       transcriber = await loadPipeline("automatic-speech-recognition", model, {
         device,
-        dtype: dtypeFor(model, device),
+        dtype: dtypeFor(model, device, f16),
         progress_callback,
       });
       post({ type: "ready", device, model });
       return;
     } catch (err) {
       lastErr = err;
+      // Don't swallow it: a silent webgpu→wasm fallback is a ~10× slowdown.
+      console.warn(`[asr] load on ${device} failed, trying next device:`, err);
     }
   }
   throw lastErr;
