@@ -61,10 +61,13 @@ keystone — every later phase hangs off it.
 - New `packages/pwa/src/engine/backend.ts`: `AsrBackend` interface mirroring the
   `messages.ts` contract:
   - `load(model, opts): Promise<void>` (+ progress/loading/ready/error events)
-  - `transcribe(samples: Float32Array, opts: {words: boolean}): Promise<{text, words}>`
+  - `transcribe(samples: Float32Array, opts: {words: boolean, id: string}): Promise<{text, words}>`
+    — `id` is the **segment UUID** Captioner assigned to this utterance (threaded
+    in P1.5; see "Refinement correlation" below). WorkerBackend ignores it.
   - `onStatus(cb)` / `onProgress(cb)` — status + model-load progress
   - `onRefine(cb: (id, {text, words}) => void)` — **new**; async refined result
-    for an already-emitted utterance id. WebGPU backend never fires it.
+    for an already-emitted segment `id` (the same UUID passed to `transcribe`).
+    WebGPU backend never fires it.
   - `close()`
 - `WorkerBackend implements AsrBackend` — wraps today's `new Worker(asr.worker.ts)`
   + `rpc` + `onWorkerEvent` verbatim (moved out of `Captioner`).
@@ -81,9 +84,10 @@ keystone — every later phase hangs off it.
 - `LocalWsBackend implements AsrBackend`:
   - Connects to the localhost WS (reuse the capped-backoff reconnect pattern
     from `packages/display/src/sources/websocket.ts`).
-  - `transcribe(clip)` → sends a **binary clip frame** (see wire format below),
-    resolves the promise on the correlated result message. Fires `onRefine`
-    when Python later returns a refined result for the same id.
+  - `transcribe(clip, {words, id})` → sends a **binary clip frame** (see wire
+    format below), resolves the promise on the correlated result message. Fires
+    `onRefine(id, …)` when Python later returns a refined result (see
+    "Refinement correlation" below).
   - Model list + status come from Python over the existing JSON control
     messages (`setModel`, `status`, model advertisement).
   - Discovery: probe `ws://127.0.0.1:8765/ws` when `local server` is selected;
@@ -98,18 +102,32 @@ keystone — every later phase hangs off it.
   `{"text": ...}` (JSON control/caption) vs `{"bytes": ...}` (audio clip). Audio
   **bypasses** `parse_client_message` (pydantic `extra="forbid"` + JSON is a poor
   fit for PCM). One socket, mixed frames — no second connection.
-- **Wire format (binary clip frame):** small fixed header + PCM payload:
-  - `u32 utteranceId`, `u8 flags` (bit0 = final vs partial), `u8 format`
-    (0 = Float32LE, 1 = Int16LE), `u16 reserved`, then the PCM samples
-    (mono, 16 kHz). Result correlation is by `utteranceId`.
+- **Wire format (binary clip frame):** small fixed header + PCM payload
+  (implemented in P1, `localWsBackend.ts`, LE):
+  - `u32 reqId` (per-decode correlation token, browser-allocated), `u8 flags`
+    (bit0 = final vs partial), `u8 format` (0 = Float32LE, 1 = Int16LE),
+    `u16 reserved`, then the PCM samples (mono, 16 kHz).
+  - Result correlation is by `reqId`. **The server only ever echoes `reqId` — it
+    never sees the segment UUID** (see "Refinement correlation").
   - Keep this **out of the Zod/pydantic protocol** — it's a binary side-channel.
     Only tiny JSON additions (see protocol note) get a `PROTOCOL_VERSION` bump.
+- **Refinement correlation (segment id) — DECIDED (P1.5):** the browser owns the
+  segment UUID; the server is stateless on ids and works purely in `reqId`.
+  - `transcribe(samples, {words, id})` carries the segment UUID. `LocalWsBackend`
+    allocates a `reqId`, sends the clip, and keeps a bounded `reqId → id` map.
+  - Immediate result `asrResult{reqId, text, words}` → resolves the `transcribe`
+    promise. Later `asrRefined{reqId, text, words}` → `LocalWsBackend` looks up
+    `id` for that `reqId` and fires `onRefine(id, …)`; `Captioner` upserts the
+    refined final by that id (lock-aware). The `reqId → id` entry is cleared on
+    refine or by a TTL/cap.
+  - Consequence: the P2 server + protocol carry **no UUID** — refinement is
+    associated entirely browser-side. This is why the wire needs only a `u32`.
 - **`ClipDecoder` service** (new; implements the `Controller` protocol beside
   `LiveStreamer`/`MockProducer`, wired in `cli.py`): on a clip →
-  `engine.transcribe(samples)` → emit `final`/`partial` correlated by id;
-  submit finals to the existing `RefinementPass` → refined result re-sent for the
-  same id. It does **not** use `_frames`/VAD/utterance assembly (that's the
-  browser's job now). Reuses hub → WS writer path to return results.
+  `engine.transcribe(samples)` → emit `asrResult{reqId, …}`; submit finals to the
+  existing `RefinementPass` → `asrRefined{reqId, …}` (same `reqId`). It does
+  **not** use `_frames`/VAD/utterance assembly (that's the browser's job now),
+  and never handles segment UUIDs. Reuses hub → WS writer path to return results.
   - `set_model` / model advertisement work through existing control messages.
   - `set_device`/sounddevice methods become no-ops in this mode.
 - **Checkpoint:** `local server` backend fully functional end-to-end; a browser
